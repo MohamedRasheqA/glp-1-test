@@ -4,21 +4,151 @@ import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageCircle, Send, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { MessageCircle, Send, ThumbsUp, ThumbsDown, Loader2 } from "lucide-react";
 import toast from 'react-hot-toast';
 
 interface ChatMessage {
-  id: string; // Add unique identifier for messages
+  id: string;
   type: 'user' | 'bot';
   content: string;
   timestamp: string;
   feedback?: number;
 }
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
+interface DetailedFeedbackProps {
+  messageContent: string;
+  messageId: string;
+  onClose: () => void;
+}
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const DetailedFeedback = ({ messageContent, messageId, onClose }: DetailedFeedbackProps) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [analysis, setAnalysis] = useState('');
+
+  const getDetailedAnalysis = async () => {
+    setIsLoading(true);
+    try {
+      // First request to analyze the problematic response
+      const analysisResponse = await fetch('/api/analyze-feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageContent,
+          prompt: `Analyze why this response might not have been helpful:
+          "${messageContent}"
+          
+          Consider:
+          1. Accuracy of information
+          2. Clarity of explanation
+          3. Relevance to likely user intent
+          4. Completeness of response
+          5. Tone and approachability
+          
+          Provide specific suggestions for improvement.`
+        }),
+      });
+
+      if (!analysisResponse.ok) {
+        throw new Error('Failed to analyze feedback');
+      }
+
+      const analysisData = await analysisResponse.json();
+      
+      // Second request to generate improved response
+      const improvementResponse = await fetch('/api/generate-improved-response', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          originalMessage: messageContent,
+          analysis: analysisData.analysis
+        }),
+      });
+
+      if (!improvementResponse.ok) {
+        throw new Error('Failed to generate improved response');
+      }
+
+      const improvementData = await improvementResponse.json();
+      setAnalysis(improvementData.response);
+
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageId,
+          feedback: 0,
+          messageContent,
+          analysis: analysisData.analysis,
+          improvedResponse: improvementData.response,
+          timestamp: new Date().toISOString()
+        }),
+      });
+
+      toast.success('Thank you for your feedback!');
+    } catch (error) {
+      console.error('Error processing feedback:', error);
+      toast.error('Failed to process feedback');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Feedback Analysis</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          {!analysis && !isLoading && (
+            <div className="text-center space-y-4">
+              <p className="text-gray-600">
+                Would you like us to analyze this response and provide a more helpful alternative?
+              </p>
+              <Button 
+                onClick={getDetailedAnalysis}
+                className="bg-[#FE3301] text-white hover:bg-[#FE3301]/90"
+              >
+                Yes, analyze this response
+              </Button>
+            </div>
+          )}
+          
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <Loader2 className="h-8 w-8 animate-spin text-[#FE3301]" />
+              <p className="text-gray-600">Analyzing response...</p>
+            </div>
+          )}
+
+          {analysis && (
+            <div className="space-y-4">
+              <div className="rounded-lg bg-gray-50 p-4">
+                <h4 className="font-medium mb-2">Improved Response:</h4>
+                <p className="text-gray-700 whitespace-pre-wrap">{analysis}</p>
+              </div>
+              <div className="flex justify-end">
+                <Button 
+                  onClick={onClose}
+                  variant="outline"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 const formatMarkdown = (content: string): React.ReactNode => {
   if (!content) return null;
@@ -30,10 +160,17 @@ export default function Chat() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [showDetailedFeedback, setShowDetailedFeedback] = useState<string | null>(null);
 
   const handleFeedback = async (index: number, value: number) => {
     const message = messages[index];
     if (!message || message.type !== 'bot') return;
+
+    // If it's a thumbs down, show the detailed feedback dialog
+    if (value === 0) {
+      setShowDetailedFeedback(message.id);
+      return;
+    }
 
     // Optimistic update
     setMessages(prevMessages => {
@@ -65,13 +202,7 @@ export default function Chat() {
         throw new Error(data.message || 'Failed to store feedback');
       }
 
-      if (data.usedFallback) {
-        toast.success('Feedback saved to backup system');
-      } else if (data.usedLocal) {
-        toast.success('Feedback saved locally - will sync later');
-      } else {
-        toast.success('Feedback saved');
-      }
+      toast.success('Feedback saved');
 
     } catch (error) {
       console.error('Error storing feedback:', error);
@@ -107,7 +238,7 @@ export default function Chat() {
     if (!input.trim()) return;
 
     const userMessage: ChatMessage = {
-      id: crypto.randomUUID(), // Generate unique ID
+      id: crypto.randomUUID(),
       type: 'user',
       content: input,
       timestamp: new Date().toISOString()
@@ -132,21 +263,19 @@ export default function Chat() {
       }
 
       const data = await response.json();
-      console.log('API Response:', data);
       
       if (data.status === 'success' && data.response) {
         const botMessage: ChatMessage = {
-          id: crypto.randomUUID(), // Generate unique ID
+          id: crypto.randomUUID(),
           type: 'bot',
           content: data.response,
           timestamp: new Date().toISOString(),
         };
-        console.log('Bot Message:', botMessage);
         setMessages(prev => [...prev, botMessage]);
       }
     } catch (error) {
       const errorMessage: ChatMessage = {
-        id: crypto.randomUUID(), // Generate unique ID
+        id: crypto.randomUUID(),
         type: 'bot',
         content: 'Sorry, there was an error processing your request.',
         timestamp: new Date().toISOString()
@@ -158,7 +287,6 @@ export default function Chat() {
     }
   };
 
-  // Rest of the component remains the same...
   return (
     <div className="min-h-screen bg-gradient-to-t from-[#FFF5F2] via-[#FFF9F7] to-white">
       <Header />
@@ -261,6 +389,14 @@ export default function Chat() {
         </Card>
       </main>
 
+      {showDetailedFeedback && (
+        <DetailedFeedback
+          messageId={showDetailedFeedback}
+          messageContent={messages.find(m => m.id === showDetailedFeedback)?.content || ''}
+          onClose={() => setShowDetailedFeedback(null)}
+        />
+      )}
+
       <style jsx global>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
@@ -271,7 +407,7 @@ export default function Chat() {
           animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
 
-        .delay-150 { animation-delay: 150ms; }
+                .delay-150 { animation-delay: 150ms; }
         .delay-300 { animation-delay: 300ms; }
         
         .backdrop-blur-sm {
