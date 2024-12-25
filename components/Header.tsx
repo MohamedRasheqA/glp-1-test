@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Button } from "@/components/ui/button"
-import { Heart, Home, MessageCircle, Calculator } from "lucide-react"
+import { Pill, Home, MessageCircle, Calculator } from "lucide-react"
 import { useState } from 'react'
 
 export function Header() {
@@ -18,13 +18,13 @@ export function Header() {
             href="/" 
             className="flex items-center space-x-2 animate-wiggle animate-twice ml-4"
           >
-            <Heart 
+            <Pill 
               className={`h-8 w-8 text-[#FE3301] transition-transform duration-300 ${
-                isHovered ? 'animate-pulse' : ''
+                isHovered ? 'animate-pulse rotate-45' : ''
               }`} 
             />
             <span className="font-bold text-base text-[#FE3301] sm:inline-block font-sans">
-              GLP-1 Assistant
+              Med-Assistant
             </span>
           </Link>
           <nav className="flex items-center gap-2 sm:gap-3">

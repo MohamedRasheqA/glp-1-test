@@ -14,7 +14,7 @@ const Section1: React.FC<Section1Props> = ({ isSignedIn, onSignIn }) => {
   const [typingSpeed, setTypingSpeed] = useState(100);
 
   const words = [
-    "Welcome to GLP-1 Assistant",
+    "Welcome to Medication Assistant",
     "Your Health Journey Partner",
     "Get Expert Guidance Today"
   ];
@@ -74,7 +74,7 @@ const Section1: React.FC<Section1Props> = ({ isSignedIn, onSignIn }) => {
           </div>
           
           <p className="text-black/80 text-lg md:text-xl lg:text-2xl mb-8 max-w-3xl font-sans animate-fade-left animate-once">
-            Your AI-powered companion for all things related to GLP-1. Get expert advice, diet recommendations, your prescriptions, and more.
+           Get Expert insights , plan your lifestyle to better manage side effects,understand your medication, and more.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4">
@@ -85,7 +85,7 @@ const Section1: React.FC<Section1Props> = ({ isSignedIn, onSignIn }) => {
             >
               <a href="/chat" className="flex items-center">
                 <MessageCircle className="mr-2 h-5 w-5" />
-                Start Chatting
+                Start Conversation
               </a>
             </Button>
           </div>

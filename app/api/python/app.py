@@ -2,7 +2,7 @@ import requests
 import json
 from typing import Dict, Any, Optional, Generator, List, ClassVar
 import os
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context
 from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime
@@ -108,31 +108,7 @@ class HealthAssistant:
             "Content-Type": "application/json"
         }
         
-        # Update PPLX system prompt
-        self.pplx_system_prompt = """
-You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1 medications (such as Ozempic, Wegovy, Mounjaro, etc.). You must:
-
-1. ONLY provide information about GLP-1 medications and directly related topics
-
-2. For any query not specifically about GLP-1 medications or their direct effects, respond with:
-   "I apologize, but I can only provide information about GLP-1 medications and related topics. Your question appears to be about something else. Please ask a question specifically about GLP-1 medications, their usage, effects, or related concerns."
-
-3. For valid GLP-1 queries, structure your response with:
-   - An empathetic opening acknowledging the patient's situation
-   - Clear, validated medical information about GLP-1 medications
-   - Important safety considerations or disclaimers
-   - An encouraging closing that reinforces their healthcare journey
-
-4. Always provide source citations which is related to the generated response. Importantly only provide sources for about GLP-1 medications
-
-5. Provide response in a simple manner that is easy to understand at preferably a 11th grade literacy level with reduced pharmaceutical or medical jargon
-
-6. Always Return sources in a hyperlink format
-
-Remember: 
-- You must NEVER provide information about topics outside of GLP-1 medications and their direct effects and do not provide any sources for the response
-- Maintain a professional yet approachable tone, emphasizing both expertise and emotional support
-"""
+       
 
 
         
@@ -170,7 +146,150 @@ Examples:
         genai.configure(api_key=self.gemini_api_key)
         self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
+        # Update system prompts with both personas
+        self.system_prompts = {
+            "glp1": """
+You are a specialized medical information assistant focused EXCLUSIVELY on GLP-1 medications (such as Ozempic, Wegovy, Mounjaro, etc.). You must:
+
+1. ONLY provide information about GLP-1 medications and directly related topics
+
+2. For any query not specifically about GLP-1 medications or their direct effects, respond with:
+   "I apologize, but I can only provide information about GLP-1 medications and related topics. Your question appears to be about something else. Please ask a question specifically about GLP-1 medications, their usage, effects, or related concerns."
+
+3. For valid GLP-1 queries, structure your response with:
+   - An empathetic opening acknowledging the patient's situation
+   - Clear, validated medical information about GLP-1 medications
+   - Important safety considerations or disclaimers
+   - An encouraging closing that reinforces their healthcare journey
+
+4. Always provide source citations in this format:
+   [Source Name](https://actual-url.com)
+
+For example:
+   [FDA Safety Information](https://www.fda.gov/ozempic)
+   [Clinical Study](https://pubmed.ncbi.nlm.nih.gov/example)
+
+Remember: Each claim should be linked to its source using markdown hyperlink syntax.
+
+5. Provide response in a simple manner that is easy to understand at preferably a 11th grade literacy level
+6. Always Return sources in a hyperlink format
+
+Remember: 
+- Maintain a professional yet approachable tone, emphasizing both expertise and emotional support
+""",
+            "general_med": """
+You are a comprehensive medical information assistant providing guidance on general medication-related queries. You must:
+
+1. Provide accurate, evidence-based information about medications and their effects
+2. Structure your responses with:
+   - Clear, factual information about the medication or medical topic
+   - Important safety considerations and contraindications
+   - Proper usage guidelines when applicable
+   - References to authoritative medical sources
+3. Always emphasize the importance of consulting healthcare providers
+4. Use plain language and explain medical terms
+5. Clearly state if a topic requires immediate medical attention
+6. Do not provide specific dosage recommendations
+7. Include relevant source citations in hyperlink format
+
+Remember:
+- Maintain professional accuracy while being accessible
+- Always prioritize patient safety
+- Encourage professional medical consultation
+"""
+        }
+
+        # Initialize with default persona
+        self.current_persona = "general_med"
         self.initialized = True
+
+    def set_persona(self, persona: str) -> None:
+        """Set the current persona for the assistant"""
+        if persona in ["glp1", "general_med"]:
+            self.current_persona = persona
+        else:
+            raise ValueError("Invalid persona specified")
+
+    def get_medical_response(self, query: str, selected_persona: str = "general_med") -> Dict[str, Any]:
+        """Get response based on user-selected persona"""
+        try:
+            if not query.strip():
+                return {
+                    "status": "error",
+                    "message": "Please enter a valid question."
+                }
+
+            # Set the persona based on user selection
+            self.set_persona(selected_persona)
+            
+            # Handle greetings
+            if self.is_greeting(query):
+                greeting_response = self.handle_greeting(query)
+                return {
+                    "status": "success",
+                    "query": query,
+                    "query_category": "greeting",
+                    "response": greeting_response,
+                    "persona": self.current_persona,
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "conversation_history": self.conversation_history
+                }
+            
+            # Use PPLX for the response with selected persona
+            payload = {
+                "model": self.pplx_model,
+                "messages": [
+                    {"role": "system", "content": self.system_prompts[self.current_persona]},
+                    {"role": "user", "content": query}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 1500
+            }
+            
+            response = requests.post(
+                "https://api.perplexity.ai/chat/completions",
+                headers=self.pplx_headers,
+                json=payload
+            )
+            
+            response.raise_for_status()
+            response_data = response.json()
+            content = response_data['choices'][0]['message']['content']
+            
+            # Update conversation history with persona information
+            self.conversation_history.append({
+                "query": query,
+                "response": content,
+                "persona": self.current_persona,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
+            return {
+                "status": "success",
+                "query": query,
+                "query_category": self.categorize_query(query),
+                "response": content.strip(),
+                "persona": self.current_persona,
+                "disclaimer": "Always consult your healthcare provider before making any changes to your medication or treatment plan.",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "conversation_history": self.conversation_history
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in get_medical_response: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    def is_glp1_related(self, query: str) -> bool:
+        """Determine if the query is GLP-1 related"""
+        glp1_keywords = [
+            "glp-1", "glp1", "ozempic", "wegovy", "mounjaro", "rybelsus",
+            "semaglutide", "dulaglutide", "liraglutide", "tirzepatide"
+        ]
+        query_lower = query.lower()
+        return any(keyword in query_lower for keyword in glp1_keywords)
 
     def get_glp1_response(self, query: str) -> Dict[str, Any]:
         """Get response for GLP-1 related queries"""
@@ -396,7 +515,7 @@ Analysis:
         return "general"
 
     def handle_greeting(self, message: str) -> str:
-        """Handle greetings using GPT model"""
+        """Handle greeting messages"""
         try:
             response = self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -410,7 +529,100 @@ Analysis:
             return response.choices[0].message.content.strip()
         except Exception as e:
             logger.error(f"Error in handle_greeting: {str(e)}")
-            return "Hello! How can I help you with GLP-1 medications today?"
+            return "Hello! How can I help you with medical information today?"
+
+    def is_greeting(self, message: str) -> bool:
+        """Check if the message is a greeting"""
+        greetings = [
+            'hello', 'hi', 'hey', 'good morning', 'good afternoon', 
+            'good evening', 'howdy', 'greetings', 'hi there',
+            'bye', 'goodbye', 'see you', 'thanks', 'thank you'
+        ]
+        return message.lower().strip().replace('!', '') in greetings
+
+    def get_streaming_response(self, query: str, selected_persona: str = "general_med") -> Generator:
+        """Get streaming response based on user-selected persona"""
+        try:
+            if not query.strip():
+                yield json.dumps({"status": "error", "message": "Please enter a valid question."})
+                return
+
+            self.set_persona(selected_persona)
+            
+            if self.is_greeting(query):
+                yield json.dumps({
+                    "status": "success",
+                    "query": query,
+                    "query_category": "greeting",
+                    "response": self.handle_greeting(query),
+                    "persona": self.current_persona,
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+                return
+
+            # Streaming payload for PPLX
+            payload = {
+                "model": self.pplx_model,
+                "messages": [
+                    {"role": "system", "content": self.system_prompts[self.current_persona]},
+                    {"role": "user", "content": query}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 1500,
+                "stream": True  # Enable streaming
+            }
+            
+            response = requests.post(
+                "https://api.perplexity.ai/chat/completions",
+                headers=self.pplx_headers,
+                json=payload,
+                stream=True  # Enable streaming for requests
+            )
+            
+            response.raise_for_status()
+            
+            full_response = ""
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        json_response = json.loads(line.decode('utf-8').replace('data: ', ''))
+                        if 'choices' in json_response:
+                            content = json_response['choices'][0].get('delta', {}).get('content', '')
+                            if content:
+                                full_response += content
+                                yield json.dumps({
+                                    "status": "streaming",
+                                    "content": content,
+                                    "persona": self.current_persona
+                                }) + '\n'
+                    except json.JSONDecodeError:
+                        continue
+
+            # Update conversation history after complete response
+            self.conversation_history.append({
+                "query": query,
+                "response": full_response,
+                "persona": self.current_persona,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+            # Send final message
+            yield json.dumps({
+                "status": "complete",
+                "query": query,
+                "query_category": self.categorize_query(query),
+                "full_response": full_response,
+                "persona": self.current_persona,
+                "disclaimer": "Always consult your healthcare provider before making any changes to your medication or treatment plan.",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+        except Exception as e:
+            logger.error(f"Error in get_streaming_response: {str(e)}")
+            yield json.dumps({
+                "status": "error",
+                "message": str(e)
+            })
 
 # Flask routes
 @app.route('/')
@@ -423,6 +635,7 @@ def chat():
     try:
         data = request.get_json()
         query = data.get('query')
+        selected_persona = data.get('persona', 'general_med')  # User-selected persona
         
         if not query:
             return jsonify({
@@ -430,10 +643,8 @@ def chat():
                 "message": "No query provided"
             }), 400
 
-        assistant = HealthAssistant()  # Will return the singleton instance
-        response = assistant.get_glp1_response(query)
-        
-        logger.info(f"Chat response: {response}")  # Debug log
+        assistant = HealthAssistant()
+        response = assistant.get_medical_response(query, selected_persona)
         
         return jsonify(response)
 
@@ -570,6 +781,62 @@ def get_chat_history():
         })
 
     except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/personas', methods=['GET'])
+def get_personas():
+    """Return available personas"""
+    return jsonify({
+        "status": "success",
+        "personas": [
+            {
+                "id": "glp1",
+                "name": "GLP-1 Specialist",
+                "description": "Specialized in GLP-1 medications and related topics"
+            },
+            {
+                "id": "general_med",
+                "name": "General Medical Assistant",
+                "description": "Knowledgeable about general medication-related queries"
+            }
+        ]
+    })
+
+# Update the chat endpoint to support streaming
+@app.route('/api/chat/stream', methods=['POST'])
+def chat_stream():
+    try:
+        data = request.get_json()
+        query = data.get('query')
+        selected_persona = data.get('persona', 'general_med')
+        
+        if not query:
+            return jsonify({
+                "status": "error",
+                "message": "No query provided"
+            }), 400
+
+        assistant = HealthAssistant()
+
+        def generate():
+            for response in assistant.get_streaming_response(query, selected_persona):
+                yield f"data: {response}\n\n"
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error in chat_stream endpoint: {str(e)}")
         return jsonify({
             "status": "error",
             "message": str(e)

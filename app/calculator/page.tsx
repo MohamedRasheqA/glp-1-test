@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { Header } from "@/components/Header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import ReactMarkdown from 'react-markdown'
 
 interface AnalysisResult {
   status: string;
@@ -35,27 +36,13 @@ export default function Calculator() {
   const [error, setError] = useState<string | null>(null)
 
   const formatResponse = (data: AnalysisResult): FormattedResponse => {
-    let formattedContent = `
-      ${data.analysis.split('\n').map(line => {
-        if (line.startsWith('- **')) {
-          const [heading, ...descriptionParts] = line.replace('- **', '').split('**:');
-          const description = descriptionParts.join('**:').trim();
-          return `
-            <div class="mb-4">
-              <div class="font-semibold">${heading}:</div>
-              <div class="ml-4">${description}</div>
-            </div>`;
-        }
-        return `<div class="ml-4 my-2">${line}</div>`;
-      }).join('')}
-    `;
-
     return {
-      content: formattedContent,
+      content: data.analysis,
       metadata: {
         category: data.category,
         timestamp: data.timestamp,
-        confidence: data.confidence
+        confidence: data.confidence,
+        sources: data.sources ? JSON.parse(data.sources) : undefined
       }
     };
   };
@@ -191,12 +178,65 @@ export default function Calculator() {
                             </div>
                           </div>
                         </div>
-                        <div 
-                          className="prose max-w-none text-sm"
-                          dangerouslySetInnerHTML={{ 
-                            __html: formatResponse(analysisResult).content 
-                          }}
-                        />
+                        <div className="prose max-w-none text-sm">
+                          <ReactMarkdown
+                            components={{
+                              // Custom link component to open in new tab
+                              a: ({ node, ...props }) => (
+                                <a 
+                                  {...props} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-[#FE3301] hover:underline"
+                                />
+                              ),
+                              // Custom paragraph component to handle spacing
+                              p: ({ node, ...props }) => (
+                                <p {...props} className="mb-4" />
+                              ),
+                              // Custom heading components
+                              h1: ({ node, ...props }) => (
+                                <h1 {...props} className="text-2xl font-bold mb-4" />
+                              ),
+                              h2: ({ node, ...props }) => (
+                                <h2 {...props} className="text-xl font-bold mb-3" />
+                              ),
+                              h3: ({ node, ...props }) => (
+                                <h3 {...props} className="text-lg font-bold mb-2" />
+                              ),
+                              // Custom list components
+                              ul: ({ node, ...props }) => (
+                                <ul {...props} className="list-disc pl-6 mb-4" />
+                              ),
+                              ol: ({ node, ...props }) => (
+                                <ol {...props} className="list-decimal pl-6 mb-4" />
+                              ),
+                              // Custom list item component
+                              li: ({ node, ...props }) => (
+                                <li {...props} className="mb-1" />
+                              ),
+                            }}
+                          >
+                            {formatResponse(analysisResult).content}
+                          </ReactMarkdown>
+
+                          {/* Sources section */}
+                          {formatResponse(analysisResult).metadata?.sources?.map((source, index) => (
+                            <div key={index} className="mt-6 pt-4 border-t border-gray-200">
+                              <h3 className="text-lg font-semibold mb-2">Sources</h3>
+                              <div className="space-y-2">
+                                <a
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block text-[#FE3301] hover:underline"
+                                >
+                                  {source.title}
+                                </a>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                         {analysisResult.timestamp && (
                           <div className="text-xs text-gray-500 mt-4">
                             {new Date(analysisResult.timestamp).toLocaleTimeString()}

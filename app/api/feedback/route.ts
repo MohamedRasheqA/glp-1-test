@@ -1,34 +1,31 @@
 import { NextResponse } from 'next/server';
 import { Pool, PoolClient } from 'pg';
 
-// Connection retry configuration
 const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY = 1000; // 1 second
+const INITIAL_RETRY_DELAY = 1000;
 
-// Configure connection pool with optimized settings
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://neondb_owner:MteivdRH0V2I@ep-holy-mouse-a5n9cbo9.us-east-2.aws.neon.tech/medi-feedback?sslmode=require',
   ssl: {
     rejectUnauthorized: false
   },
-  connectionTimeoutMillis: 5000, // Reduced to 5 seconds
+  connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
-  max: 10, // Reduced max connections
-  maxUses: 7500, // Reset connection after 7500 queries
-  statement_timeout: 10000, // 10 second statement timeout
-  query_timeout: 10000 // 10 second query timeout
+  max: 10,
+  maxUses: 7500,
+  statement_timeout: 10000,
+  query_timeout: 10000
 });
 
-// Add error handler to the pool
 pool.on('error', (err) => {
   console.error('Unexpected error on idle client', err);
-  // Don't exit process, just log the error
 });
 
 interface FeedbackRequest {
   messageId: string;
   feedback: number;
   messageContent: string;
+  userSuggestion?: string;
   timestamp: string;
 }
 
@@ -46,19 +43,17 @@ async function executeWithRetry(operation: (client: PoolClient) => Promise<any>)
       lastError = error;
       console.error(`Attempt ${retryCount + 1} failed:`, error.message);
       
-      // Don't retry on validation errors
       if (error.code === '23505' || error.code === '23502') {
         throw error;
       }
       
-      // Wait before retrying, with exponential backoff
       const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount);
       await new Promise(resolve => setTimeout(resolve, delay));
       
       retryCount++;
     } finally {
       if (client) {
-        client.release(true); // Release with error = true to destroy the connection if there was an error
+        client.release(true);
       }
     }
   }
@@ -70,7 +65,6 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as FeedbackRequest;
     
-    // Validate request body
     if (!body.messageId || typeof body.feedback !== 'number' || ![0, 1].includes(body.feedback)) {
       return NextResponse.json({
         status: 'error',
@@ -79,7 +73,6 @@ export async function POST(request: Request) {
     }
 
     const result = await executeWithRetry(async (client) => {
-      // Use a transaction for data consistency
       await client.query('BEGIN');
       
       try {
@@ -88,19 +81,22 @@ export async function POST(request: Request) {
             message_id,
             feedback,
             message_content,
+            user_suggestion,
             timestamp
-          ) VALUES ($1, $2, $3, $4)
+          ) VALUES ($1, $2, $3, $4, $5)
           ON CONFLICT (message_id) 
           DO UPDATE SET 
             feedback = EXCLUDED.feedback,
+            user_suggestion = EXCLUDED.user_suggestion,
             updated_at = CURRENT_TIMESTAMP
-          RETURNING id, feedback
+          RETURNING id, feedback, user_suggestion
         `;
 
         const result = await client.query(query, [
           body.messageId,
           body.feedback,
           body.messageContent,
+          body.userSuggestion || null,
           body.timestamp
         ]);
 
@@ -121,7 +117,6 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Feedback API Error:', error);
     
-    // Map specific error codes to appropriate responses
     const errorResponses: Record<string, { message: string, status: number }> = {
       'ETIMEDOUT': { message: 'Database connection timed out', status: 504 },
       'ECONNREFUSED': { message: 'Could not connect to database', status: 503 },

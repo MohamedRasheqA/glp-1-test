@@ -21,21 +21,17 @@ const FAQCard: React.FC<{ question: string; answer: string }> = ({ question, ans
 const FAQSection: React.FC = () => {
   const faqs = [
     {
-      question: "How do GLP-1 medications work?",
-      answer: "GLP-1s help produce more of this hormone, impact hunger signaling, and slow down gastric emptying. This can lead to feeling 'full' for longer periods, making it easier to manage food intake."
-    },
+      question: "What should I do if I miss a dose of my medication?",
+      answer: "If you miss a dose, take it as soon as you remember. However, if it is close to the time for your next dose, skip the missed dose and continue with your regular schedule. Do not double up doses to make up for a missed one. If you're unsure, consult your healthcare provider or pharmacist." },
     {
-      question: "What are the benefits of GLP-1 medications?",
-      answer: "GLP-1 medications can impact overall longevity and well-being. However, without integration with behavioral medicine and lifestyle changes, these benefits will likely end when patients stop taking GLP-1 medications."
-    },
+      question: "Can I take my medication with food?",
+      answer: "Some medications can be taken with food to reduce stomach irritation, while others should be taken on an empty stomach for better absorption. Check the instructions on your prescription label or consult your pharmacist to understand the best way to take your medication."},
     {
-      question: "What are the most common side effects?",
-      answer: "The most common side effects include nausea, vomiting, diarrhea, stomach pain, low appetite, fatigue, and dizziness. There is also a risk of low blood sugar, which is more likely if you take other medications to manage blood sugar."
-    },
+      question: "What are the common side effects of my medication?",
+      answer: "Side effects vary by medication. Common ones may include nausea, headache, dizziness, or fatigue. For a complete list, refer to the medication leaflet or ask your pharmacist. If you experience severe or unexpected side effects, contact your doctor immediately." },
     {
-      question: "What happens if I don't take this medication?",
-      answer: "This depends on why GLP-1 medications were recommended to you. If you choose not to take them, you may continue to have the same health status with regards to your diabetes, weight, or liver function."
-    }
+      question: "How should I store my medication?",
+      answer: "Most medications should be stored in a cool, dry place away from direct sunlight and out of reach of children and pets. Some medications may require refrigeration. Always follow the storage instructions provided on the label or packaging."}
   ];
 
   return (
