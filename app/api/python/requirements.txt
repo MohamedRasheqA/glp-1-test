@@ -1,0 +1,15 @@
+Flask
+Werkzeug
+python-docx
+python-dotenv
+langchain-openai
+langchain-pinecone
+langchain
+pinecone-client
+langsmith
+Flask-Cors
+psycopg2-binary
+pillow
+torch
+requests
+openai
