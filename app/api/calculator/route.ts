@@ -15,7 +15,7 @@ export async function POST(request: Request) {
    
     
     console.log('Sending request to backend...');
-    const response = await fetch(`http://127.0.0.1:5000/api/calculator`, {
+    const response = await fetch(`https://glp-1-backend.vercel.app/api/calculator`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
