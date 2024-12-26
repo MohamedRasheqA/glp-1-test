@@ -33,23 +33,19 @@ const FeaturesSection: React.FC = () => {
           <FeatureCard
             icon={<MessageSquare size={32} />}
             title="Expert Information"
-            description="Get instant answers to your questions about GLP-1 medications from our AI assistant."
+            description="Get instant answers to your questions about all medications from our AI assistant."
           />
           <FeatureCard
             icon={<LayoutDashboard size={32} />}
             title="Treatment Guidance"
-            description="Learn about treatment options and management strategies for type 2 diabetes and obesity."
+            description="Learn about treatment options and management strategies for your problems and get appropriate treatment."
           />
           <FeatureCard
             icon={<Pill size={32} />}
             title="Medication Management"
-            description="Understand dosing, administration, and monitoring of GLP-1 agonists."
+            description="Understand dosing, administration, and monitoring of your health conditions."
           />
-          <FeatureCard
-            icon={<Info size={32} />}
-            title="About GLP-1"
-            description="Glucagon-like peptide-1 (GLP-1) agonists are medications for type 2 diabetes mellitus and obesity."
-          />
+          
         </div>
       </div>
     </section>
