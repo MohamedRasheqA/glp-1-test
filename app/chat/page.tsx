@@ -1,4 +1,5 @@
 "use client"
+
 import { useState, useEffect, useRef } from 'react';
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,15 @@ const personaConfig: PersonaConfig = {
     color: '#00C48C',
     shortName: 'GLP-1'
   }
+};
+
+// Global state for session maintenance
+const globalState = {
+  messages: [] as ChatMessage[],
+  selectedPersona: 'general_med',
+  similarQuestions: [] as Memory[],
+  isProcessing: false,
+  sessionActive: false
 };
 
 const MessageContent = ({ content }: { content: string }) => {
@@ -179,14 +189,15 @@ const DetailedFeedback = ({ messageContent, messageId, onClose }: DetailedFeedba
 };
 
 export default function Chat() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(globalState.messages);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showDetailedFeedback, setShowDetailedFeedback] = useState<string | null>(null);
-  const [similarQuestions, setSimilarQuestions] = useState<Memory[]>([]);
-  const [selectedPersona, setSelectedPersona] = useState('general_med');
+  const [similarQuestions, setSimilarQuestions] = useState<Memory[]>(globalState.similarQuestions);
+  const [selectedPersona, setSelectedPersona] = useState(globalState.selectedPersona);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const processingRef = useRef<boolean>(false);
 
   const scrollToBottom = () => {
     const chatContainer = messagesEndRef.current?.closest('.chat-container');
@@ -196,10 +207,31 @@ export default function Chat() {
   };
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        setMessages(globalState.messages);
+        setSimilarQuestions(globalState.similarQuestions);
+        setSelectedPersona(globalState.selectedPersona);
+
+        if (!globalState.isProcessing) {
+          processingRef.current = false;
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping, isLoading]);
 
-  // Function to store memory
   const storeMemory = async (question: string) => {
     try {
       const response = await fetch('/api/memory', {
@@ -220,7 +252,6 @@ export default function Chat() {
     }
   };
 
-  // Function to get similar questions
   const getSimilarQuestions = async (query: string) => {
     try {
       const response = await fetch(`/api/memory?query=${encodeURIComponent(query)}`);
@@ -229,6 +260,7 @@ export default function Chat() {
       const data = await response.json();
       if (data.status === 'success') {
         setSimilarQuestions(data.memories);
+        globalState.similarQuestions = data.memories;
       }
     } catch (error) {
       console.error('Error fetching similar questions:', error);
@@ -244,14 +276,15 @@ export default function Chat() {
       return;
     }
 
-    setMessages(prevMessages => {
-      const newMessages = [...prevMessages];
-      newMessages[index] = {
-        ...newMessages[index],
-        feedback: value
-      };
-      return newMessages;
+    const updatedMessages = messages.map((msg, i) => {
+      if (i === index) {
+        return { ...msg, feedback: value };
+      }
+      return msg;
     });
+
+    setMessages(updatedMessages);
+    globalState.messages = updatedMessages;
 
     try {
       const response = await fetch('/api/feedback', {
@@ -275,14 +308,15 @@ export default function Chat() {
     } catch (error) {
       console.error('Error storing feedback:', error);
       
-      setMessages(prevMessages => {
-        const newMessages = [...prevMessages];
-        newMessages[index] = {
-          ...newMessages[index],
-          feedback: undefined
-        };
-        return newMessages;
+      const revertedMessages = messages.map((msg, i) => {
+        if (i === index) {
+          return { ...msg, feedback: undefined };
+        }
+        return msg;
       });
+
+      setMessages(revertedMessages);
+      globalState.messages = revertedMessages;
 
       toast.error('Failed to save feedback');
     }
@@ -290,7 +324,10 @@ export default function Chat() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || processingRef.current) return;
+
+    processingRef.current = true;
+    globalState.isProcessing = true;
 
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -299,19 +336,20 @@ export default function Chat() {
       timestamp: new Date().toISOString()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    globalState.messages = updatedMessages;
+
     setInput('');
     setIsLoading(true);
     setIsTyping(true);
 
     try {
-      // Store the question in memory and get similar questions
       await Promise.all([
         storeMemory(input),
         getSimilarQuestions(input)
       ]);
 
-      // Get chat response
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -337,7 +375,10 @@ export default function Chat() {
           content: data.response,
           timestamp: new Date().toISOString(),
         };
-        setMessages(prev => [...prev, botMessage]);
+        
+        const newMessages = [...updatedMessages, botMessage];
+        setMessages(newMessages);
+        globalState.messages = newMessages;
       }
     } catch (error) {
       const errorMessage: ChatMessage = {
@@ -346,10 +387,15 @@ export default function Chat() {
         content: 'Sorry, there was an error processing your request.',
         timestamp: new Date().toISOString()
       };
-      setMessages(prev => [...prev, errorMessage]);
+
+      const newMessages = [...updatedMessages, errorMessage];
+      setMessages(newMessages);
+      globalState.messages = newMessages;
     } finally {
       setIsLoading(false);
       setIsTyping(false);
+      processingRef.current = false;
+      globalState.isProcessing = false;
     }
   };
 
@@ -547,7 +593,6 @@ export default function Chat() {
           background-color: transparent;
         }
 
-        /* Memory-specific styles */
         .memory-indicator {
           position: absolute;
           top: -8px;
