@@ -45,6 +45,11 @@ const FeaturesSection: React.FC = () => {
             title="Medication Management"
             description="Understand dosing, administration, and monitoring of your health conditions."
           />
+          <FeatureCard
+            icon={<Pill size={32} />}
+            title="Call to Action"
+            description="Get started today with Common Medication Assistant and simplify your medication management!"
+          />
           
         </div>
       </div>
