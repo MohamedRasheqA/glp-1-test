@@ -53,6 +53,68 @@ const personaConfig: PersonaConfig = {
   }
 };
 
+// Enhanced Message Content Component
+const EnhancedMessageContent = ({ content }: { content: string }) => {
+  const formatText = (text: string) => {
+    // Split content into sections
+    const sections = text.split('\n\n');
+    
+    return sections.map((section, index) => {
+      // Format bold text with **
+      let formattedSection = section.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      
+      // Format headings
+      if (section.startsWith('**') && section.endsWith('**')) {
+        formattedSection = `<h2 class="text-lg font-bold mb-3 mt-4">${formattedSection.slice(2, -2)}</h2>`;
+      }
+      
+      // Format bullet points
+      if (section.includes('\n* ')) {
+        const bullets = section.split('\n* ');
+        formattedSection = `<ul class="list-disc pl-6 space-y-2 my-3">
+          ${bullets.map((bullet, i) => 
+            i === 0 ? '' : `<li>${bullet}</li>`
+          ).join('')}
+        </ul>`;
+      }
+      
+      // Format citations [1]
+      formattedSection = formattedSection.replace(
+        /\[(\d+)\]/g,
+        '<a href="#citation-$1" class="text-blue-600 hover:underline">[$1]</a>'
+      );
+      
+      // Format source links at the end
+      if (section.includes('[Sources:')) {
+        const sourcePattern = /\[(\d+)\]\((https?:\/\/[^\s)]+)\)/g;
+        formattedSection = formattedSection.replace(sourcePattern, (match, num, url) => {
+          return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">[${num}]</a>`;
+        });
+      }
+
+      // Format inline links with text description
+      const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+      formattedSection = formattedSection.replace(linkPattern, (match, text, url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${text}</a>`;
+      });
+      
+      return (
+        <div 
+          key={index} 
+          className="mb-4"
+          dangerouslySetInnerHTML={{ __html: formattedSection }}
+        />
+      );
+    });
+  };
+
+  return (
+    <div className="prose prose-sm max-w-none">
+      {formatText(content)}
+    </div>
+  );
+};
+
 // Global state for session maintenance
 const globalState = {
   messages: [] as ChatMessage[],
@@ -60,48 +122,6 @@ const globalState = {
   similarQuestions: [] as Memory[],
   isProcessing: false,
   sessionActive: false
-};
-
-const MessageContent = ({ content }: { content: string }) => {
-  const formatText = (text: string) => {
-    // Format headings with ###
-    text = text.replace(/###\s+(.+)/g, '<h3 class="font-bold text-lg mb-2">$1</h3>');
-    
-    // Format bold text with **
-    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    
-    // Format bullet points
-    text = text.replace(/^\s*-\s+(.+?)$/gm, '<li>$1</li>');
-    
-    // Format external links with @ symbol
-    text = text.replace(
-      /@(https?:\/\/[^\s]+)/g,
-      '<a href="$1" class="text-blue-500 hover:underline" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
-    
-    // Format citations
-    text = text.replace(
-      /\[(\d+)\]/g,
-      '<a href="#source-$1" class="text-[#FE3301] hover:underline">[$1]</a>'
-    );
-    
-    // Format source links
-    text = text.replace(
-      /^- \*\*(.*?)\*\*: (https?:\/\/[^\s]+)$/gm,
-      '- <a href="$2" class="text-[#FE3301] hover:underline" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
-    
-    return text;
-  };
-
-  const formattedContent = formatText(content);
-
-  return (
-    <div 
-      className="whitespace-pre-wrap"
-      dangerouslySetInnerHTML={{ __html: formattedContent }}
-    />
-  );
 };
 
 const DetailedFeedback = ({ messageContent, messageId, onClose }: DetailedFeedbackProps) => {
@@ -196,6 +216,7 @@ export default function Chat() {
   const [showDetailedFeedback, setShowDetailedFeedback] = useState<string | null>(null);
   const [similarQuestions, setSimilarQuestions] = useState<Memory[]>(globalState.similarQuestions);
   const [selectedPersona, setSelectedPersona] = useState(globalState.selectedPersona);
+  const [title, setTitle] = useState('Medication Assistant Discussion');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const processingRef = useRef<boolean>(false);
 
@@ -369,13 +390,14 @@ export default function Chat() {
       const data = await response.json();
       
       if (data.status === 'success' && data.response) {
+        if (data.title) setTitle(data.title);
         const botMessage: ChatMessage = {
           id: crypto.randomUUID(),
           type: 'bot',
           content: data.response,
           timestamp: new Date().toISOString(),
         };
-        
+        console.log("title", data.title);
         const newMessages = [...updatedMessages, botMessage];
         setMessages(newMessages);
         globalState.messages = newMessages;
@@ -404,14 +426,14 @@ export default function Chat() {
       <Header />
       <main className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold text-center mb-8 text-[#FE3301]">
-          GLP-1 Assistant
+          Medication Assistant
         </h1>
         
         <Card className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm shadow-lg">
           <CardHeader className="border-b">
             <CardTitle className="flex items-center gap-2 text-[#FE3301]">
               <MessageCircle className="h-6 w-6" />
-              GLP-1 Discussion
+              {title}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 sm:p-6">
@@ -435,7 +457,7 @@ export default function Chat() {
                             : 'bg-white border border-gray-100'
                         }`}
                       >
-                        <MessageContent content={message.content} />
+                        <EnhancedMessageContent content={message.content} />
                       </div>
                       <div className="flex items-center justify-between mt-1">
                         <div className="text-xs text-gray-500">
