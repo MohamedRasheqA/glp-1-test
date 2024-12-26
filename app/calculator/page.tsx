@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import React from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import { Header } from "@/components/Header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import ReactMarkdown from 'react-markdown'
 
 interface AnalysisResult {
   status: string;
@@ -14,6 +14,14 @@ interface AnalysisResult {
   analysis: string;
   sources?: string;
   timestamp: string;
+  id: string;
+}
+
+interface PendingAnalysis {
+  id: string;
+  image: string;
+  timestamp: number;
+  retryCount: number;
 }
 
 interface FormattedResponse {
@@ -29,11 +37,143 @@ interface FormattedResponse {
   };
 }
 
+// Global state with a single source of truth
+const globalState = {
+  selectedImage: null as string | null,
+  analysisResults: [] as AnalysisResult[],
+  pendingAnalyses: new Map<string, PendingAnalysis>(),
+  isProcessing: false,
+};
+
+// Constants
+const MAX_RETRIES = 3;
+const REQUEST_TIMEOUT = 300000;
+const generateId = () => Math.random().toString(36).substr(2, 9);
+
+const MessageContent = ({ content }: { content: string }) => {
+  const formatText = (text: string) => {
+    // Split text into lines and filter out empty lines
+    return text.split('\n').filter(line => line.trim()).map((line, i, arr) => {
+      // Check if line starts with a single asterisk
+      if (line.trim().startsWith('* ')) {
+        const bulletContent = line.trim().substring(2);
+        const formattedBullet = bulletContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        return (
+          <React.Fragment key={i}>
+            <div style={{ display: 'flex', alignItems: 'start', marginBottom: '4px' }}>
+              <span style={{ marginRight: '8px' }}>•</span>
+              <span dangerouslySetInnerHTML={{ __html: formattedBullet }} />
+            </div>
+          </React.Fragment>
+        );
+      }
+
+      // Handle regular lines with bold text
+      const boldText = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      return (
+        <React.Fragment key={i}>
+          <span dangerouslySetInnerHTML={{ __html: boldText }} />
+          {i < arr.length - 1 && <div style={{ marginBottom: '4px' }} />}
+        </React.Fragment>
+      );
+    });
+  };
+
+  return <div style={{ lineHeight: '1.4' }}>{formatText(content)}</div>;
+};
+
 export default function Calculator() {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null)
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
+  const [selectedImage, setSelectedImage] = useState<string | null>(globalState.selectedImage)
+  const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>(globalState.analysisResults)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const processingRef = useRef<boolean>(false)
+
+  const processAnalyses = async () => {
+    if (processingRef.current) return;
+    
+    processingRef.current = true;
+    globalState.isProcessing = true;
+
+    try {
+      while (globalState.pendingAnalyses.size > 0) {
+        const [firstAnalysisId, firstAnalysis] = Array.from(globalState.pendingAnalyses.entries())[0];
+        
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+          const response = await fetch('/api/calculator', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ image: firstAnalysis.image }),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            throw new Error('Failed to analyze image');
+          }
+
+          const result = await response.json();
+          const analysisResult: AnalysisResult = {
+            ...result,
+            id: firstAnalysisId,
+            timestamp: new Date().toISOString(),
+          };
+
+          globalState.analysisResults = [...globalState.analysisResults, analysisResult];
+          setAnalysisResults(globalState.analysisResults);
+          globalState.pendingAnalyses.delete(firstAnalysisId);
+          
+        } catch (error) {
+          console.error('Error processing analysis:', error);
+          
+          if (firstAnalysis.retryCount < MAX_RETRIES) {
+            firstAnalysis.retryCount += 1;
+            firstAnalysis.timestamp = Date.now();
+            globalState.pendingAnalyses.delete(firstAnalysisId);
+            globalState.pendingAnalyses.set(firstAnalysisId, firstAnalysis);
+          } else {
+            setError('Failed to analyze image after multiple attempts. Please try again.');
+            globalState.pendingAnalyses.delete(firstAnalysisId);
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    } finally {
+      processingRef.current = false;
+      globalState.isProcessing = false;
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setSelectedImage(globalState.selectedImage);
+      setAnalysisResults(globalState.analysisResults);
+      
+      if (!document.hidden && globalState.pendingAnalyses.size > 0 && !globalState.isProcessing) {
+        processAnalyses();
+      }
+    };
+
+    if (globalState.pendingAnalyses.size > 0 && !globalState.isProcessing) {
+      processAnalyses();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
+  }, []);
 
   const formatResponse = (data: AnalysisResult): FormattedResponse => {
     return {
@@ -41,8 +181,7 @@ export default function Calculator() {
       metadata: {
         category: data.category,
         timestamp: data.timestamp,
-        confidence: data.confidence,
-        sources: data.sources ? JSON.parse(data.sources) : undefined
+        confidence: data.confidence
       }
     };
   };
@@ -52,40 +191,38 @@ export default function Calculator() {
     if (file) {
       const reader = new FileReader()
       reader.onloadend = () => {
-        setSelectedImage(reader.result as string)
+        const imageString = reader.result as string;
+        setSelectedImage(imageString);
+        globalState.selectedImage = imageString;
+        // Clear previous results
+        setAnalysisResults([]);
+        globalState.analysisResults = [];
+        setError(null);
       }
       reader.readAsDataURL(file)
     }
   }
 
   const analyzeImage = async () => {
-    if (!selectedImage) return
+    if (!selectedImage) return;
 
-    setIsLoading(true)
-    setError(null)
-    try {
-      const response = await fetch('/api/calculator', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: selectedImage }),
-      })
+    setError(null);
+    setIsLoading(true);
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to analyze image')
-      }
+    const analysisId = generateId();
+    const pendingAnalysis: PendingAnalysis = {
+      id: analysisId,
+      image: selectedImage,
+      timestamp: Date.now(),
+      retryCount: 0,
+    };
 
-      const result = await response.json()
-      setAnalysisResult(result)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
-      setAnalysisResult(null)
-    } finally {
-      setIsLoading(false)
+    globalState.pendingAnalyses.set(analysisId, pendingAnalysis);
+
+    if (!globalState.isProcessing) {
+      processAnalyses();
     }
-  }
+  };
 
   return (
     <>
@@ -102,16 +239,16 @@ export default function Calculator() {
       <div className="relative min-h-screen flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center p-4 relative z-20">
-          <Card className={`h-[80vh] ${analysisResult ? 'w-[95%]' : 'w-[600px]'} mx-auto bg-white/80 backdrop-blur-sm`}>
+          <Card className={`h-[80vh] ${analysisResults.length > 0 ? 'w-[95%]' : 'w-[600px]'} mx-auto bg-white/80 backdrop-blur-sm`}>
             <CardHeader>
               <CardTitle className="text-2xl font-bold text-[#FE3301] text-center">
-                Food Image Analysis
+                Meal Analyzer
               </CardTitle>
             </CardHeader>
             <CardContent className="h-[calc(100%-5rem)] overflow-hidden">
-              <div className={`h-full ${analysisResult ? 'grid grid-cols-1 lg:grid-cols-2 gap-6' : 'flex flex-col items-center justify-center'}`}>
+              <div className={`h-full ${analysisResults.length > 0 ? 'grid grid-cols-1 lg:grid-cols-2 gap-6' : 'flex flex-col items-center justify-center'}`}>
                 {/* Left Column - Image Upload and Preview */}
-                <div className={`space-y-6 ${analysisResult ? 'h-full overflow-y-auto' : 'w-full max-w-md'} flex flex-col items-center`}>
+                <div className={`space-y-6 ${analysisResults.length > 0 ? 'h-full overflow-y-auto' : 'w-full max-w-md'} flex flex-col items-center`}>
                   <div className="flex justify-center w-64">
                     <input
                       type="file"
@@ -157,93 +294,37 @@ export default function Calculator() {
                 </div>
 
                 {/* Right Column - Analysis Results */}
-                {(error || analysisResult) && (
+                {(error || analysisResults.length > 0) && (
                   <div className="h-full overflow-y-auto">
                     {error && (
                       <div className="p-4 bg-red-50 text-red-700 rounded-lg border border-red-200 animate-fadeIn">
                         {error}
                       </div>
                     )}
-
-                    {analysisResult && (
-                      <div className="h-full p-6 space-y-4">
-                        <div className="mb-6">
-                          <div className="text-lg font-semibold mb-2">Analysis Results</div>
-                          <div className="space-y-2">
-                            <div className="text-sm">
-                              Category: <span className="font-medium">{analysisResult.category}</span>
+                    {analysisResults.map((result) => (
+                      <div key={result.id}>
+                        <div>
+                          <div>Analysis Results</div>
+                          <div>
+                            <div>
+                              <strong>Category:</strong> {result.category}
                             </div>
-                            <div className="text-sm">
-                              Confidence: <span className="font-medium">{analysisResult.confidence.toFixed(2)}%</span>
+                            <div>
+                              <strong>Confidence:</strong> {result.confidence.toFixed(2)}%
+                            </div>
+                            <div>
+                              <strong>Status:</strong> {result.status}
+                            </div>
+                            <div>
+                              <strong>Timestamp:</strong> {new Date(result.timestamp).toLocaleString()}
                             </div>
                           </div>
                         </div>
-                        <div className="prose max-w-none text-sm">
-                          <ReactMarkdown
-                            components={{
-                              // Custom link component to open in new tab
-                              a: ({ node, ...props }) => (
-                                <a 
-                                  {...props} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="text-[#FE3301] hover:underline"
-                                />
-                              ),
-                              // Custom paragraph component to handle spacing
-                              p: ({ node, ...props }) => (
-                                <p {...props} className="mb-4" />
-                              ),
-                              // Custom heading components
-                              h1: ({ node, ...props }) => (
-                                <h1 {...props} className="text-2xl font-bold mb-4" />
-                              ),
-                              h2: ({ node, ...props }) => (
-                                <h2 {...props} className="text-xl font-bold mb-3" />
-                              ),
-                              h3: ({ node, ...props }) => (
-                                <h3 {...props} className="text-lg font-bold mb-2" />
-                              ),
-                              // Custom list components
-                              ul: ({ node, ...props }) => (
-                                <ul {...props} className="list-disc pl-6 mb-4" />
-                              ),
-                              ol: ({ node, ...props }) => (
-                                <ol {...props} className="list-decimal pl-6 mb-4" />
-                              ),
-                              // Custom list item component
-                              li: ({ node, ...props }) => (
-                                <li {...props} className="mb-1" />
-                              ),
-                            }}
-                          >
-                            {formatResponse(analysisResult).content}
-                          </ReactMarkdown>
-
-                          {/* Sources section */}
-                          {formatResponse(analysisResult).metadata?.sources?.map((source, index) => (
-                            <div key={index} className="mt-6 pt-4 border-t border-gray-200">
-                              <h3 className="text-lg font-semibold mb-2">Sources</h3>
-                              <div className="space-y-2">
-                                <a
-                                  href={source.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="block text-[#FE3301] hover:underline"
-                                >
-                                  {source.title}
-                                </a>
-                              </div>
-                            </div>
-                          ))}
+                        <div>
+                          <MessageContent content={result.analysis} />
                         </div>
-                        {analysisResult.timestamp && (
-                          <div className="text-xs text-gray-500 mt-4">
-                            {new Date(analysisResult.timestamp).toLocaleTimeString()}
-                          </div>
-                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
@@ -254,11 +335,11 @@ export default function Calculator() {
 
       <style jsx global>{`
         .area {
+          background: white;
           width: 100%;
           height: 100vh;
           position: absolute;
-          top: 0;
-          left: 0;
+          z-index: 1;
         }
 
         .circles {
@@ -278,10 +359,9 @@ export default function Calculator() {
           list-style: none;
           width: 20px;
           height: 20px;
-          background: rgba(254, 51, 1, 0.2);
+          background: rgba(254, 51, 1, 0.1);
           animation: animate 25s linear infinite;
           bottom: -150px;
-          border-radius: 50%;
         }
 
         .circles li:nth-child(1) {
@@ -362,9 +442,10 @@ export default function Calculator() {
         @keyframes animate {
           0% {
             transform: translateY(0) rotate(0deg);
-            opacity: 0.5;
-            border-radius: 50%;
+            opacity: 1;
+            border-radius: 0;
           }
+
           100% {
             transform: translateY(-1000px) rotate(720deg);
             opacity: 0;
@@ -384,9 +465,28 @@ export default function Calculator() {
         }
 
         .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out forwards;
+          animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        /* Custom scrollbar styles */
+        ::-webkit-scrollbar {
+          width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+          background: #FE3301;
+          border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+          background: #cc2901;
         }
       `}</style>
     </>
-  )
+  );
 }
