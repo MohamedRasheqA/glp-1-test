@@ -216,6 +216,32 @@ Remember:
         self.current_persona = "general_med"
         self.initialized = True
 
+        # Add rewrite prompt
+        self.rewrite_prompt = """
+        Given a user query about medications, create two things:
+        1. A clear, concise rewrite of the query that maintains the original meaning
+        2. A short, descriptive title (3-6 words) that captures the main topic
+        
+        Format the response exactly as JSON:
+        {
+            "rewritten_query": "...",
+            "title": "..."
+        }
+        
+        Examples:
+        Query: "what r the side effects of ozempic"
+        {
+            "rewritten_query": "What are the common side effects of Ozempic?",
+            "title": "Ozempic Side Effects Overview"
+        }
+        
+        Query: "can i drink alcohol while taking glp1"
+        {
+            "rewritten_query": "Is it safe to consume alcohol while taking GLP-1 medications?",
+            "title": "GLP-1 and Alcohol Interaction"
+        }
+        """
+
     def set_persona(self, persona: str) -> None:
         """Set the current persona for the assistant"""
         if persona in ["glp1", "general_med"]:
@@ -232,9 +258,6 @@ Remember:
                     "message": "Please enter a valid question."
                 }
 
-            # Set the persona based on user selection
-            self.set_persona(selected_persona)
-            
             # Handle greetings
             if self.is_greeting(query):
                 greeting_response = self.handle_greeting(query)
@@ -244,47 +267,21 @@ Remember:
                     "query_category": "greeting",
                     "response": greeting_response,
                     "persona": self.current_persona,
+                    "title": "Greeting",
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "conversation_history": self.conversation_history
                 }
 
-            # Add medication query validation for general_med persona
-            if selected_persona == "general_med":
-                # First, check if the query is medication-related
-                validation_prompt = f"""
-                Determine if the following query is related to medications, drugs, or pharmaceutical treatments:
-                Query: {query}
-                
-                Respond with only 'YES' if it's medication-related, or 'NO' if it's not.
-                """
-                
-                validation_response = self.openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You are a query validator. Respond only with 'YES' or 'NO'."},
-                        {"role": "user", "content": validation_prompt}
-                    ]
-                )
-                
-                is_medication_related = validation_response.choices[0].message.content.strip().upper() == "YES"
-                
-                if not is_medication_related:
-                    return {
-                        "status": "success",
-                        "query": query,
-                        "query_category": "non_medical",
-                        "response": "I apologize, but I can only provide information about medications and directly related topics. Your question appears to be about something else. Please ask a question specifically about medications, their usage, effects, or related concerns.",
-                        "persona": self.current_persona,
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "conversation_history": self.conversation_history
-                    }
-            
-            # Continue with existing PPLX response for valid queries
+            # Get rewritten query and title
+            rewritten = self.rewrite_query(query)
+            title = rewritten.get("title", "Medical Query")
+
+            # Continue with existing PPLX response logic
             payload = {
                 "model": self.pplx_model,
                 "messages": [
                     {"role": "system", "content": self.system_prompts[self.current_persona]},
-                    {"role": "user", "content": query}
+                    {"role": "user", "content": query}  # Use original query for response
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1500
@@ -300,7 +297,7 @@ Remember:
             response_data = response.json()
             content = response_data['choices'][0]['message']['content']
             
-            # Update conversation history with persona information
+            # Update conversation history
             self.conversation_history.append({
                 "query": query,
                 "response": content,
@@ -314,6 +311,7 @@ Remember:
                 "query_category": self.categorize_query(query),
                 "response": content.strip(),
                 "persona": self.current_persona,
+                "title": title,  # Add the generated title
                 "disclaimer": "Always consult your healthcare provider before making any changes to your medication or treatment plan.",
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "conversation_history": self.conversation_history
@@ -667,6 +665,38 @@ Analysis:
                 "status": "error",
                 "message": str(e)
             })
+
+    def rewrite_query(self, query: str) -> Dict[str, str]:
+        """Rewrite the user query and generate a title"""
+        try:
+            logger.info(f"Starting query rewrite for: {query}")
+            
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": self.rewrite_prompt},
+                    {"role": "user", "content": query}
+                ],
+                temperature=0.7,
+                max_tokens=150
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            logger.info(f"Parsed result: {result}")
+            
+            # Validate the result has required fields
+            if not all(key in result for key in ["rewritten_query", "title"]):
+                logger.error("Missing required fields in response")
+                raise ValueError("Invalid response format")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in rewrite_query: {str(e)}")
+            return {
+                "rewritten_query": query,
+                "title": "Medical Query"
+            }
 
 # Flask routes
 @app.route('/')
