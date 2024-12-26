@@ -105,7 +105,7 @@ export default function Calculator() {
           <Card className={`h-[80vh] ${analysisResult ? 'w-[95%]' : 'w-[600px]'} mx-auto bg-white/80 backdrop-blur-sm`}>
             <CardHeader>
               <CardTitle className="text-2xl font-bold text-[#FE3301] text-center">
-                Food Image Analysis
+                Meal Analyzer
               </CardTitle>
             </CardHeader>
             <CardContent className="h-[calc(100%-5rem)] overflow-hidden">
