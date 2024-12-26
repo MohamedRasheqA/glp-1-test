@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     console.log('Sending request to LLM API:', query);
 
     try {
-      const response = await fetch('https://glp-1-backend.vercel.app/api/chat', {
+      const response = await fetch('https://glp-1-test.vercel.app/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
