@@ -358,7 +358,7 @@ export default function Chat() {
       <Header />
       <main className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold text-center mb-8 text-[#FE3301]">
-          GLP-1 Assistant
+          Medication Assistant
         </h1>
         
         <Card className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm shadow-lg">
