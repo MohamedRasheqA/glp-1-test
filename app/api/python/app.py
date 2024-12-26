@@ -108,9 +108,7 @@ class HealthAssistant:
             "Content-Type": "application/json"
         }
         
-       
-
-
+    
         
         # Food Analysis Configuration - Simplified to use only OpenAI
         self.openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
@@ -178,24 +176,39 @@ Remember:
 - Maintain a professional yet approachable tone, emphasizing both expertise and emotional support
 """,
             "general_med": """
-You are a comprehensive medical information assistant providing guidance on general medication-related queries. You must:
+You are a comprehensive medical information assistant providing guidance EXCLUSIVELY on medication-related queries. You must:
 
-1. Provide accurate, evidence-based information about medications and their effects
-2. Structure your responses with:
-   - Clear, factual information about the medication or medical topic
+1. ONLY provide information about medications and directly related topics
+2. For any query NOT related to medications, respond with:
+   "I apologize, but I can only provide information about medications and directly related topics. Your question appears to be about something else. Please ask a question specifically about medications, their usage, effects, or related concerns."
+
+3. For valid medication queries, structure your responses with:
+   - Clear, factual information about the medication
    - Important safety considerations and contraindications
    - Proper usage guidelines when applicable
    - References to authoritative medical sources
-3. Always emphasize the importance of consulting healthcare providers
-4. Use plain language and explain medical terms
-5. Clearly state if a topic requires immediate medical attention
-6. Do not provide specific dosage recommendations
-7. Include relevant source citations in hyperlink format
 
-Remember:
+4. Always emphasize the importance of consulting healthcare providers
+5. Use plain language and explain medical terms
+6. Do not provide specific dosage recommendations
+
+7. IMPORTANT - Source Citations:
+   Always provide source citations in this format:
+   [Source Name](https://actual-url.com)
+
+   For example:
+   [FDA Drug Information](https://www.fda.gov/drugs)
+   [Mayo Clinic](https://www.mayoclinic.org)
+   [NIH MedlinePlus](https://medlineplus.gov)
+
+Remember: 
+- Each claim should be linked to its source using markdown hyperlink syntax
+- Use reputable medical sources (FDA, NIH, Mayo Clinic, etc.)
+- Include relevant page sections in the URL when possible
 - Maintain professional accuracy while being accessible
 - Always prioritize patient safety
 - Encourage professional medical consultation
+- STRICTLY stay within the scope of medication-related topics
 """
         }
 
@@ -234,8 +247,39 @@ Remember:
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "conversation_history": self.conversation_history
                 }
+
+            # Add medication query validation for general_med persona
+            if selected_persona == "general_med":
+                # First, check if the query is medication-related
+                validation_prompt = f"""
+                Determine if the following query is related to medications, drugs, or pharmaceutical treatments:
+                Query: {query}
+                
+                Respond with only 'YES' if it's medication-related, or 'NO' if it's not.
+                """
+                
+                validation_response = self.openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a query validator. Respond only with 'YES' or 'NO'."},
+                        {"role": "user", "content": validation_prompt}
+                    ]
+                )
+                
+                is_medication_related = validation_response.choices[0].message.content.strip().upper() == "YES"
+                
+                if not is_medication_related:
+                    return {
+                        "status": "success",
+                        "query": query,
+                        "query_category": "non_medical",
+                        "response": "I apologize, but I can only provide information about medications and directly related topics. Your question appears to be about something else. Please ask a question specifically about medications, their usage, effects, or related concerns.",
+                        "persona": self.current_persona,
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "conversation_history": self.conversation_history
+                    }
             
-            # Use PPLX for the response with selected persona
+            # Continue with existing PPLX response for valid queries
             payload = {
                 "model": self.pplx_model,
                 "messages": [
@@ -322,7 +366,7 @@ Remember:
 
             Message: {query}
 
-            Response (GREETING, GLP1, or UNRELATED):
+            Response (GREETING, GLP1, General Medication, or UNRELATED):
             """
             
             relevance_response = self.openai_client.chat.completions.create(
