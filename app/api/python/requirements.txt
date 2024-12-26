@@ -7,9 +7,5 @@ langchain-pinecone
 langchain
 pinecone-client
 langsmith
-Flask-Cors
+flask-cors
 psycopg2-binary
-pillow
-torch
-requests
-openai
