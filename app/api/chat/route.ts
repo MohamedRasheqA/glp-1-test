@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     console.log('Sending request to Flask API:', query);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 290000);
-    const response = await fetch('http://127.0.0.1:5000/api/chat', {
+    const response = await fetch('https://glp-1-test.vercel.app/api/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
