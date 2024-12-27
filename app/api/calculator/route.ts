@@ -15,7 +15,7 @@ export async function POST(request: Request) {
    
     
     console.log('Sending request to backend...');
-    const response = await fetch(`https://glp-1-test.vercel.app/api/calculator`, {
+    const response = await fetch(`https://medication-assistant-backend.vercel.app/api/calculator`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 export async function GET() {
   try {
     
-    const response = await fetch(`https://glp-1-xplo.vercel.app/api/calaculator`, {
+    const response = await fetch(`https://medication-assistant-backend.vercel.app/api/calaculator`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
