@@ -483,147 +483,151 @@ export default function Chat() {
   return (
     <div className="min-h-screen bg-gradient-to-t from-[#FFF5F2] via-[#FFF9F7] to-white">
       <Header />
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8 h-[calc(100vh-4rem)]">
         <h1 className="text-3xl font-bold text-center mb-8 text-[#FE3301]">
           Medication Assistant
         </h1>
         
-        <Card className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm shadow-lg">
+        <Card className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm shadow-lg h-[calc(100%-4rem)]">
           <CardHeader className="border-b">
             <CardTitle className="flex items-center gap-2 text-[#FE3301]">
               <MessageCircle className="h-6 w-6" />
               {title}
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex flex-col h-[calc(100vh-20rem)]">
-              <div className="flex-1 overflow-y-auto pr-2 space-y-4 chat-container scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                {messages.map((message, index) => (
-                  <div 
-                    key={message.id} 
-                    className="w-full"
-                  >
-                    <div className="w-full">
-                      {message.type === 'bot' ? (
-                        <div className="text-sm text-gray-600 mb-1">AI Assistant</div>
-                      ) : (
-                        <div className="text-sm text-gray-600 mb-1">You</div>
-                      )}
-                      <div 
-                        className={`rounded-lg p-4 ${
-                          message.type === 'user' 
-                            ? 'bg-gradient-to-r from-[#FFE5E0] to-[#FFE9E5] border border-[#FE330125]' 
-                            : 'bg-white border border-gray-100'
-                        }`}
-                      >
-                        <MessageContent content={message.content} sources={message.sources} />
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <div className="text-xs text-gray-500">
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </div>
-                        {message.type === 'bot' && (
-                          <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleFeedback(index, 1)}
-                              className={`p-2 hover:bg-green-100 ${
-                                message.feedback === 1 ? 'bg-green-100' : ''
-                              }`}
-                            >
-                              <ThumbsUp className={`h-4 w-4 ${
-                                message.feedback === 1 ? 'text-green-600' : 'text-gray-500'
-                              }`} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleFeedback(index, 0)}
-                              className={`p-2 hover:bg-red-100 ${
-                                message.feedback === 0 ? 'bg-red-100' : ''
-                              }`}
-                            >
-                              <ThumbsDown className={`h-4 w-4 ${
-                                message.feedback === 0 ? 'text-red-600' : 'text-gray-500'
-                              }`} />
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {(isTyping || isLoading) && (
+          <CardContent className="p-4 sm:p-6 flex flex-col h-[calc(100%-4rem)]">
+            <div className="flex-1 overflow-y-auto mb-4 chat-container">
+              {messages.map((message, index) => (
+                <div 
+                  key={message.id} 
+                  className="w-full"
+                >
                   <div className="w-full">
-                    <div className="bg-white border border-gray-100 rounded-lg p-4">
-                      <div className="flex space-x-2 justify-center items-center h-6">
-                        <span className="sr-only">Loading...</span>
-                        <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce"></div>
-                        <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    {message.type === 'bot' ? (
+                      <div className="text-sm text-gray-600 mb-1">AI Assistant</div>
+                    ) : (
+                      <div className="text-sm text-gray-600 mb-1">You</div>
+                    )}
+                    <div 
+                      className={`rounded-lg p-4 ${
+                        message.type === 'user' 
+                          ? 'bg-gradient-to-r from-[#FFE5E0] to-[#FFE9E5] border border-[#FE330125]' 
+                          : 'bg-white border border-gray-100'
+                      }`}
+                    >
+                      <MessageContent content={message.content} sources={message.sources} />
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="text-xs text-gray-500">
+                        {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
+                      {message.type === 'bot' && (
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleFeedback(index, 1)}
+                            className={`p-2 hover:bg-green-100 ${
+                              message.feedback === 1 ? 'bg-green-100' : ''
+                            }`}
+                          >
+                            <ThumbsUp className={`h-4 w-4 ${
+                              message.feedback === 1 ? 'text-green-600' : 'text-gray-500'
+                            }`} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleFeedback(index, 0)}
+                            className={`p-2 hover:bg-red-100 ${
+                              message.feedback === 0 ? 'bg-red-100' : ''
+                            }`}
+                          >
+                            <ThumbsDown className={`h-4 w-4 ${
+                              message.feedback === 0 ? 'text-red-600' : 'text-gray-500'
+                            }`} />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-              <form onSubmit={handleSubmit} className="mt-4 flex gap-2">
-                <div className="flex-1 flex gap-2">
-                  <Select
-                    value={selectedPersona}
-                    onValueChange={setSelectedPersona}
-                  >
-                    <SelectTrigger className="w-12 h-12 mb-2 p-0 border-none bg-transparent hover:bg-gray-100 rounded-full flex items-center justify-center">
-                      {selectedPersona ? (
-                        <div style={{ color: personaConfig[selectedPersona].color }}>
-                          {personaConfig[selectedPersona].icon}
-                          <span className="sr-only">{personaConfig[selectedPersona].shortName}</span>
-                        </div>
-                      ) : (
-                        <Plus className="h-5 w-5 text-gray-400" />
-                      )}
-                    </SelectTrigger>
-                    <SelectContent align="start" className="w-[200px]">
-                      {Object.entries(personaConfig).map(([key, config]) => (
-                        <SelectItem key={key} value={key}>
-                          <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-2">
-                              <div style={{ color: config.color }}>
-                                {config.icon}
-                              </div>
-                              <span>{config.shortName}</span>
-                            </div>
-                            {selectedPersona === key && (
-                              <Check className="h-4 w-4" />
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Type your message..."
-                    className="flex-1 min-h-[60px] bg-white rounded-lg px-4 py-2 focus:outline-none resize-none w-full whitespace-pre-wrap scrollbar-hide border border-gray-200 focus:border-[#FE3301]"
-                    style={{
-                      scrollbarWidth: 'none',
-                      msOverflowStyle: 'none'
-                    }}
-                  />
                 </div>
-                <div className="flex items-end">
-                  <Button 
-                    type="submit" 
-                    disabled={isLoading}
-                    className="bg-[#FE3301] text-white hover:bg-[#FE3301]/90 mb-2 h-12 w-12"
-                  >
-                    <Send className="h-5 w-5" />
-                  </Button>
+              ))}
+              {(isTyping || isLoading) && (
+                <div className="w-full">
+                  <div className="bg-white border border-gray-100 rounded-lg p-4">
+                    <div className="flex space-x-2 justify-center items-center h-6">
+                      <span className="sr-only">Loading...</span>
+                      <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce"></div>
+                      <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    </div>
+                  </div>
                 </div>
-              </form>
+              )}
+              <div ref={messagesEndRef} />
             </div>
+            <form onSubmit={handleSubmit} className="flex gap-2">
+              <div className="flex-1 flex gap-2">
+                <Select
+                  value={selectedPersona}
+                  onValueChange={setSelectedPersona}
+                >
+                  <SelectTrigger className="w-12 h-12 mb-2 p-0 border-none bg-transparent hover:bg-gray-100 rounded-full flex items-center justify-center">
+                    {selectedPersona ? (
+                      <div style={{ color: personaConfig[selectedPersona].color }}>
+                        {personaConfig[selectedPersona].icon}
+                        <span className="sr-only">{personaConfig[selectedPersona].shortName}</span>
+                      </div>
+                    ) : (
+                      <Plus className="h-5 w-5 text-gray-400" />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent align="start" className="w-[200px]">
+                    {Object.entries(personaConfig).map(([key, config]) => (
+                      <SelectItem key={key} value={key}>
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-2">
+                            <div style={{ color: config.color }}>
+                              {config.icon}
+                            </div>
+                            <span>{config.shortName}</span>
+                          </div>
+                          {selectedPersona === key && (
+                            <Check className="h-4 w-4" />
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(e);
+                    }
+                  }}
+                  placeholder="Type your message..."
+                  className="flex-1 min-h-[60px] max-h-[120px] bg-white rounded-lg px-4 py-2 focus:outline-none resize-none w-full whitespace-pre-wrap scrollbar-hide border border-gray-200 focus:border-[#FE3301] sm:text-base text-sm"
+                  style={{
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none'
+                  }}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button 
+                  type="submit" 
+                  disabled={isLoading}
+                  className="bg-[#FE3301] text-white hover:bg-[#FE3301]/90 h-12 w-12"
+                >
+                  <Send className="h-5 w-5" />
+                </Button>
+              </div>
+            </form>
           </CardContent>
         </Card>
       </main>
