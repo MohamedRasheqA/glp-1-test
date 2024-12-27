@@ -243,27 +243,27 @@ export default function Calculator() {
       <div className="relative min-h-screen flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center p-4 relative z-20">
-          <Card className={`h-[80vh] ${analysisResults.length > 0 ? 'w-[95%]' : 'w-[600px]'} mx-auto bg-white/80 backdrop-blur-sm`}>
+          <Card className={`h-[90vh] sm:h-[80vh] ${analysisResults.length > 0 ? 'w-[95%]' : 'w-[600px]'} mx-auto bg-white/80 backdrop-blur-sm`}>
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-[#FE3301] text-center">
+              <CardTitle className="text-xl sm:text-2xl font-bold text-[#FE3301] text-center">
                 Meal Analyzer
               </CardTitle>
             </CardHeader>
-            <CardContent className="h-[calc(100%-5rem)] overflow-hidden">
+            <CardContent className="h-[calc(100%-4rem)] sm:h-[calc(100%-5rem)] overflow-hidden">
               <div className={`h-full ${analysisResults.length > 0 ? 'grid grid-cols-1 lg:grid-cols-2 gap-6' : 'flex flex-col items-center justify-center'}`}>
                 {/* Left Column - Image Upload and Preview */}
-                <div className={`space-y-6 ${analysisResults.length > 0 ? 'h-full overflow-y-auto' : 'w-full max-w-md'} flex flex-col items-center`}>
-                  <div className="flex justify-center w-64">
+                <div className="flex flex-col items-center gap-6 w-full max-w-[300px] mx-auto after:content-none before:content-none border-0 divide-none">
+                  <div className="flex justify-center w-full after:content-none before:content-none border-0">
                     <input
                       type="file"
                       accept="image/*"
                       onChange={handleImageUpload}
-                      className="text-sm text-center text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#FE3301] file:text-white file:transition-colors file:hover:bg-[#FE3301]/90 hover:cursor-pointer bg-gray-400/80 rounded-full px-4 py-2"
+                      className="w-full text-sm text-center text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#FE3301] file:text-white file:transition-colors file:hover:bg-[#FE3301]/90 hover:cursor-pointer bg-gray-400/80 rounded-full px-4 py-2"
                     />
                   </div>
 
                   {selectedImage && (
-                    <div className="relative w-64 h-[300px] rounded-lg overflow-hidden shadow-lg transition-transform duration-300 hover:scale-105">
+                    <div className="relative w-64 h-[300px] rounded-lg overflow-hidden shadow-lg transition-transform duration-300 hover:scale-105 after:content-none before:content-none border-0">
                       <Image
                         src={selectedImage}
                         alt="Selected food image"
@@ -274,13 +274,13 @@ export default function Calculator() {
                     </div>
                   )}
 
-                  <div className="flex justify-center w-64">
+                  <div className="flex justify-center w-64 after:content-none before:content-none border-0">
                     <Button
                       onClick={analyzeImage}
                       disabled={!selectedImage || isLoading}
-                      className="w-full bg-[#FE3301] text-white px-6 py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:bg-[#FE3301]/90 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] active:shadow-md focus:outline-none focus:ring-2 focus:ring-[#FE3301]/50"
+                      className="w-full bg-[#FE3301] text-white px-6 py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:bg-[#FE3301]/90 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] active:shadow-md focus:outline-none focus:ring-2 focus:ring-[#FE3301]/50 after:content-none before:content-none border-0 shadow-none"
                     >
-                      <span className="inline-flex items-center justify-center">
+                      <span className="inline-flex items-center justify-center after:content-none before:content-none">
                         {isLoading ? (
                           <>
                             <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
@@ -299,7 +299,7 @@ export default function Calculator() {
 
                 {/* Right Column - Analysis Results */}
                 {(error || analysisResults.length > 0) && (
-                  <div className="h-full overflow-y-auto">
+                  <div className="h-full overflow-y-auto after:content-none before:content-none border-0">
                     {error && (
                       <div className="p-4 bg-red-50 text-red-700 rounded-lg border border-red-200 animate-fadeIn">
                         {error}
@@ -489,6 +489,17 @@ export default function Calculator() {
 
         ::-webkit-scrollbar-thumb:hover {
           background: #cc2901;
+        }
+
+        /* Add these styles to remove any potential divider lines */
+        .divide-y > :not([hidden]) ~ :not([hidden]),
+        .divide-x > :not([hidden]) ~ :not([hidden]) {
+          --tw-divide-y-reverse: 0;
+          --tw-divide-x-reverse: 0;
+          border-top-width: 0;
+          border-bottom-width: 0;
+          border-left-width: 0;
+          border-right-width: 0;
         }
       `}</style>
     </>
