@@ -74,7 +74,7 @@ const Section1: React.FC<Section1Props> = ({ isSignedIn, onSignIn }) => {
           </div>
           
           <p className="text-black/80 text-lg md:text-xl lg:text-2xl mb-8 max-w-3xl font-sans animate-fade-left animate-once">
-           Get Expert insights , plan your lifestyle to better manage side effects,understand your medication, and more.
+           Get expert insights , plan your lifestyle to better manage side effects,understand your medication, and more.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4">
