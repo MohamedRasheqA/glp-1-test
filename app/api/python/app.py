@@ -252,10 +252,39 @@ Remember:
     def get_medical_response(self, query: str, selected_persona: str = "general_med") -> Dict[str, Any]:
         """Get response based on user-selected persona"""
         try:
+            # First check if query is empty
             if not query.strip():
                 return {
                     "status": "error",
                     "message": "Please enter a valid question."
+                }
+
+            # Add explicit medication validation check
+            validation_prompt = """
+            Determine if this query is related to medications or medical treatments.
+            Query: {query}
+            
+            Respond with only:
+            MEDICAL - if about medications/treatments
+            UNRELATED - if not medical
+            """
+            
+            validation_response = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": validation_prompt},
+                    {"role": "user", "content": query}
+                ],
+                temperature=0.1,
+                max_tokens=50
+            )
+            
+            is_medical = "MEDICAL" in validation_response.choices[0].message.content.upper()
+            
+            if not is_medical:
+                return {
+                    "status": "error",
+                    "message": "I apologize, but I can only provide information about medications and directly related topics. Please ask a question specifically about medications, their usage, effects, or related concerns."
                 }
 
             # Handle greetings
