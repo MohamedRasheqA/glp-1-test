@@ -249,8 +249,8 @@ const DetailedFeedback = ({ messageContent, messageId, onClose }: DetailedFeedba
 export default function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>(globalState.messages);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(globalState.isLoading);
-  const [isTyping, setIsTyping] = useState(globalState.isTyping);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
   const [showDetailedFeedback, setShowDetailedFeedback] = useState<string | null>(null);
   const [similarQuestions, setSimilarQuestions] = useState<Memory[]>(globalState.similarQuestions);
   const [selectedPersona, setSelectedPersona] = useState(globalState.selectedPersona);
@@ -275,25 +275,16 @@ export default function Chat() {
         if (globalState.activeQuery || globalState.currentRequest) {
           setIsLoading(true);
           setIsTyping(true);
-          globalState.isLoading = true;
-          globalState.isTyping = true;
+        } else {
+          setIsLoading(globalState.isLoading);
+          setIsTyping(globalState.isTyping);
         }
 
         if (!globalState.isProcessing) {
           processingRef.current = false;
-          setIsLoading(false);
-          setIsTyping(false);
-          globalState.isLoading = false;
-          globalState.isTyping = false;
         }
       }
     };
-
-    // Initial check for ongoing requests
-    if (globalState.activeQuery || globalState.currentRequest) {
-      setIsLoading(true);
-      setIsTyping(true);
-    }
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
@@ -583,22 +574,19 @@ export default function Chat() {
                     value={selectedPersona}
                     onValueChange={setSelectedPersona}
                   >
-                    <SelectTrigger className="w-10 h-10 p-0 border-none bg-transparent hover:bg-gray-100 rounded-full flex items-center justify-center">
+                    <SelectTrigger className="w-12 h-12 mb-2 p-0 border-none bg-transparent hover:bg-gray-100 rounded-full flex items-center justify-center">
                       {selectedPersona ? (
                         <div style={{ color: personaConfig[selectedPersona].color }}>
                           {personaConfig[selectedPersona].icon}
+                          <span className="sr-only">{personaConfig[selectedPersona].shortName}</span>
                         </div>
                       ) : (
-                        <Plus className="h-4 w-4 text-gray-400" />
+                        <Plus className="h-5 w-5 text-gray-400" />
                       )}
                     </SelectTrigger>
                     <SelectContent align="start" className="w-[200px]">
                       {Object.entries(personaConfig).map(([key, config]) => (
-                        <SelectItem 
-                          key={key} 
-                          value={key}
-                          className="flex items-center gap-2"
-                        >
+                        <SelectItem key={key} value={key}>
                           <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-2">
                               <div style={{ color: config.color }}>
@@ -614,21 +602,26 @@ export default function Chat() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Input
+                  <textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     placeholder="Type your message..."
-                    disabled={isLoading}
-                    className="flex-1"
+                    className="flex-1 min-h-[60px] bg-white rounded-lg px-4 py-2 focus:outline-none resize-none w-full whitespace-pre-wrap scrollbar-hide border border-gray-200 focus:border-[#FE3301]"
+                    style={{
+                      scrollbarWidth: 'none',
+                      msOverflowStyle: 'none'
+                    }}
                   />
                 </div>
-                <Button 
-                  type="submit" 
-                  disabled={isLoading}
-                  className="bg-[#FE3301] text-white hover:bg-[#FE3301]/90"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
+                <div className="flex items-end">
+                  <Button 
+                    type="submit" 
+                    disabled={isLoading}
+                    className="bg-[#FE3301] text-white hover:bg-[#FE3301]/90 mb-2 h-12 w-12"
+                  >
+                    <Send className="h-5 w-5" />
+                  </Button>
+                </div>
               </form>
             </div>
           </CardContent>
