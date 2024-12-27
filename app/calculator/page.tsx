@@ -43,6 +43,7 @@ const globalState = {
   analysisResults: [] as AnalysisResult[],
   pendingAnalyses: new Map<string, PendingAnalysis>(),
   isProcessing: false,
+  isAnalyzing: false,
 };
 
 // Constants
@@ -85,7 +86,7 @@ const MessageContent = ({ content }: { content: string }) => {
 export default function Calculator() {
   const [selectedImage, setSelectedImage] = useState<string | null>(globalState.selectedImage)
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>(globalState.analysisResults)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(globalState.isAnalyzing)
   const [error, setError] = useState<string | null>(null)
   const processingRef = useRef<boolean>(false)
 
@@ -148,6 +149,7 @@ export default function Calculator() {
     } finally {
       processingRef.current = false;
       globalState.isProcessing = false;
+      globalState.isAnalyzing = false;
       setIsLoading(false);
     }
   };
@@ -156,6 +158,7 @@ export default function Calculator() {
     const handleVisibilityChange = () => {
       setSelectedImage(globalState.selectedImage);
       setAnalysisResults(globalState.analysisResults);
+      setIsLoading(globalState.isAnalyzing);
       
       if (!document.hidden && globalState.pendingAnalyses.size > 0 && !globalState.isProcessing) {
         processAnalyses();
@@ -208,6 +211,7 @@ export default function Calculator() {
 
     setError(null);
     setIsLoading(true);
+    globalState.isAnalyzing = true;
 
     const analysisId = generateId();
     const pendingAnalysis: PendingAnalysis = {
