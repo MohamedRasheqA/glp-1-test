@@ -15,7 +15,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "GLP-1",
+  title: "Medication Assistant",
   description: "Assistant for GLP-1"
 };
 
