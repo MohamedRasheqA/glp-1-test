@@ -9,6 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { MessageCircle, Send, ThumbsUp, ThumbsDown, Loader2, Activity, Pill, Plus, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import toast from 'react-hot-toast';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import { Components } from 'react-markdown';
 
 interface ChatMessage {
   id: string;
@@ -16,6 +20,7 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   feedback?: number;
+  sources?: { [key: string]: string };
 }
 
 interface DetailedFeedbackProps {
@@ -53,65 +58,94 @@ const personaConfig: PersonaConfig = {
   }
 };
 
-// Enhanced Message Content Component
-const EnhancedMessageContent = ({ content }: { content: string }) => {
-  const formatText = (text: string) => {
-    // Split content into sections
-    const sections = text.split('\n\n');
-    
-    return sections.map((section, index) => {
-      // Format bold text with **
-      let formattedSection = section.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      
-      // Format headings
-      if (section.startsWith('**') && section.endsWith('**')) {
-        formattedSection = `<h2 class="text-lg font-bold mb-3 mt-4">${formattedSection.slice(2, -2)}</h2>`;
-      }
-      
-      // Format bullet points
-      if (section.includes('\n* ')) {
-        const bullets = section.split('\n* ');
-        formattedSection = `<ul class="list-disc pl-6 space-y-2 my-3">
-          ${bullets.map((bullet, i) => 
-            i === 0 ? '' : `<li>${bullet}</li>`
-          ).join('')}
-        </ul>`;
-      }
-      
-      // Format citations [1]
-      formattedSection = formattedSection.replace(
-        /\[(\d+)\]/g,
-        '<a href="#citation-$1" class="text-blue-600 hover:underline">[$1]</a>'
-      );
-      
-      // Format source links at the end
-      if (section.includes('[Sources:')) {
-        const sourcePattern = /\[(\d+)\]\((https?:\/\/[^\s)]+)\)/g;
-        formattedSection = formattedSection.replace(sourcePattern, (match, num, url) => {
-          return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">[${num}]</a>`;
-        });
-      }
+interface MessageContentProps {
+  content: string;
+  sources?: { [key: string]: string };
+}
 
-      // Format inline links with text description
-      const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-      formattedSection = formattedSection.replace(linkPattern, (match, text, url) => {
-        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${text}</a>`;
-      });
-      
-      return (
-        <div 
-          key={index} 
-          className="mb-4"
-          dangerouslySetInnerHTML={{ __html: formattedSection }}
-        />
-      );
-    });
-  };
-
+const MessageContent = ({ content, sources = {} }: MessageContentProps) => {
   return (
-    <div className="prose prose-sm max-w-none">
-      {formatText(content)}
-    </div>
+    <ReactMarkdown
+      components={{
+        // Style paragraphs
+        p: ({ children }) => <p className="mb-4 last:mb-0">{children}</p>,
+        
+        // Style headings
+        h1: ({ children }) => <h1 className="text-2xl font-bold mb-4">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-xl font-bold mb-3">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-lg font-bold mb-2">{children}</h3>,
+        
+        // Style lists
+        ul: ({ children }) => <ul className="list-disc list-inside mb-4">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal list-inside mb-4">{children}</ol>,
+        
+        // Style code blocks and inline code
+        code: ({ node, inline, className, children, ...props }: {
+          node?: any;
+          inline?: boolean;
+          className?: string;
+          children?: React.ReactNode;
+          [key: string]: any;
+        }) => {
+          const match = /language-(\w+)/.exec(className || '');
+          return !inline && match ? (
+            <SyntaxHighlighter
+              style={oneDark}
+              language={match[1]}
+              PreTag="div"
+              className="rounded-md mb-4"
+              {...props}
+            >
+              {String(children).replace(/\n$/, '')}
+            </SyntaxHighlighter>
+          ) : (
+            <code className="bg-gray-100 rounded px-1 py-0.5" {...props}>
+              {children}
+            </code>
+          );
+        },
+        
+        // Style links
+        a: ({ href, children }) => (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#FE3301] hover:underline"
+          >
+            {children}
+          </a>
+        ),
+        
+        // Style blockquotes
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-4 border-gray-200 pl-4 italic mb-4">
+            {children}
+          </blockquote>
+        ),
+        
+        // Style tables
+        table: ({ children }) => (
+          <div className="overflow-x-auto mb-4">
+            <table className="min-w-full divide-y divide-gray-200">
+              {children}
+            </table>
+          </div>
+        ),
+        th: ({ children }) => (
+          <th className="px-4 py-2 bg-gray-50 text-left text-sm font-medium text-gray-500">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="px-4 py-2 text-sm text-gray-900">
+            {children}
+          </td>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
   );
 };
 
@@ -121,7 +155,11 @@ const globalState = {
   selectedPersona: 'general_med',
   similarQuestions: [] as Memory[],
   isProcessing: false,
-  sessionActive: false
+  sessionActive: false,
+  isLoading: false,
+  isTyping: false,
+  currentRequest: null as AbortController | null,
+  activeQuery: null as string | null
 };
 
 const DetailedFeedback = ({ messageContent, messageId, onClose }: DetailedFeedbackProps) => {
@@ -211,8 +249,8 @@ const DetailedFeedback = ({ messageContent, messageId, onClose }: DetailedFeedba
 export default function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>(globalState.messages);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isTyping, setIsTyping] = useState(false);
+  const [isLoading, setIsLoading] = useState(globalState.isLoading);
+  const [isTyping, setIsTyping] = useState(globalState.isTyping);
   const [showDetailedFeedback, setShowDetailedFeedback] = useState<string | null>(null);
   const [similarQuestions, setSimilarQuestions] = useState<Memory[]>(globalState.similarQuestions);
   const [selectedPersona, setSelectedPersona] = useState(globalState.selectedPersona);
@@ -233,12 +271,29 @@ export default function Chat() {
         setMessages(globalState.messages);
         setSimilarQuestions(globalState.similarQuestions);
         setSelectedPersona(globalState.selectedPersona);
+        
+        if (globalState.activeQuery || globalState.currentRequest) {
+          setIsLoading(true);
+          setIsTyping(true);
+          globalState.isLoading = true;
+          globalState.isTyping = true;
+        }
 
         if (!globalState.isProcessing) {
           processingRef.current = false;
+          setIsLoading(false);
+          setIsTyping(false);
+          globalState.isLoading = false;
+          globalState.isTyping = false;
         }
       }
     };
+
+    // Initial check for ongoing requests
+    if (globalState.activeQuery || globalState.currentRequest) {
+      setIsLoading(true);
+      setIsTyping(true);
+    }
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
@@ -347,8 +402,17 @@ export default function Chat() {
     e.preventDefault();
     if (!input.trim() || processingRef.current) return;
 
+    let timeoutId: NodeJS.Timeout | undefined;
+    const abortController = new AbortController();
+    globalState.currentRequest = abortController;
+    globalState.activeQuery = input;
+
     processingRef.current = true;
     globalState.isProcessing = true;
+    setIsLoading(true);
+    setIsTyping(true);
+    globalState.isLoading = true;
+    globalState.isTyping = true;
 
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -362,8 +426,6 @@ export default function Chat() {
     globalState.messages = updatedMessages;
 
     setInput('');
-    setIsLoading(true);
-    setIsTyping(true);
 
     try {
       await Promise.all([
@@ -414,10 +476,16 @@ export default function Chat() {
       setMessages(newMessages);
       globalState.messages = newMessages;
     } finally {
-      setIsLoading(false);
-      setIsTyping(false);
-      processingRef.current = false;
-      globalState.isProcessing = false;
+      if (globalState.currentRequest === abortController) {
+        setIsLoading(false);
+        setIsTyping(false);
+        globalState.isLoading = false;
+        globalState.isTyping = false;
+        processingRef.current = false;
+        globalState.isProcessing = false;
+        globalState.currentRequest = null;
+        globalState.activeQuery = null;
+      }
     }
   };
 
@@ -457,7 +525,7 @@ export default function Chat() {
                             : 'bg-white border border-gray-100'
                         }`}
                       >
-                        <EnhancedMessageContent content={message.content} />
+                        <MessageContent content={message.content} sources={message.sources} />
                       </div>
                       <div className="flex items-center justify-between mt-1">
                         <div className="text-xs text-gray-500">
