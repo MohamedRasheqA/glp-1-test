@@ -1,85 +1,114 @@
 // app/api/chat/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 
 export const runtime = 'edge';
-export async function POST(request: Request) {
+
+export async function GET(request: NextRequest) {
   try {
-    const { query, persona } = await request.json();
-    
+    const searchParams = request.nextUrl.searchParams;
+    const query = searchParams.get('query');
+    const persona = searchParams.get('persona') || 'general_med';
+
     if (!query) {
-      return NextResponse.json({
-        status: 'error',
-        message: 'No message provided'
-      }, { status: 400 });
+      return new Response(
+        'data: ' + JSON.stringify({
+          status: 'error',
+          message: 'No query provided'
+        }) + '\n\n',
+        {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*'
+          },
+        }
+      );
     }
 
-    const response = await fetch('https://medication-assistant-backend.vercel.app/api/chat/stream', {
+    const FLASK_API_URL = "https://medication-assistant-backend.vercel.app";
+    
+    const response = await fetch(`${FLASK_API_URL}/api/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        query: query,
-        persona: persona || 'general_med'
-      })
+      body: JSON.stringify({ query, persona })
     });
 
     if (!response.ok) {
       throw new Error(`Flask API responded with status: ${response.status}`);
     }
 
-    // Create a TransformStream to process the SSE data
+    // Create transform stream
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
     const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    
-    let buffer = '';
-    const transform = new TransformStream({
-      transform(chunk, controller) {
-        buffer += decoder.decode(chunk, { stream: true });
-        const lines = buffer.split('\n');
-        
-        buffer = lines.pop() || '';
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = line.slice(6);
-              controller.enqueue(encoder.encode(data + '\n'));
-            } catch (error) {
-              console.error('Error parsing SSE data:', error);
+
+    // Process the Flask API response
+    const processStream = async () => {
+      try {
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No response body');
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = new TextDecoder().decode(value);
+          const lines = text.split('\n');
+
+          for (const line of lines) {
+            if (line.trim() && line.startsWith('data: ')) {
+              // Ensure proper SSE format
+              await writer.write(encoder.encode(`${line}\n\n`));
             }
           }
         }
-      },
-      flush(controller) {
-        if (buffer) {
-          if (buffer.startsWith('data: ')) {
-            try {
-              const data = buffer.slice(6);
-              controller.enqueue(encoder.encode(data + '\n'));
-            } catch (error) {
-              console.error('Error parsing SSE data:', error);
-            }
-          }
-        }
+      } catch (error) {
+        console.error('Stream processing error:', error);
+        // Send error message in SSE format
+        await writer.write(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              status: 'error',
+              message: 'Stream processing error'
+            })}\n\n`
+          )
+        );
+      } finally {
+        await writer.close();
+      }
+    };
+
+    // Start processing
+    processStream();
+
+    // Return the readable stream
+    return new Response(stream.readable, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'X-Accel-Buffering': 'no'
       }
     });
 
+  } catch (error) {
     return new Response(
-      response.body?.pipeThrough(transform), {
+      'data: ' + JSON.stringify({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Internal server error'
+      }) + '\n\n',
+      {
         headers: {
           'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
-        }
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*'
+        },
       }
     );
-
-  } catch (error) {
-    console.error('API Error:', error);
-    return NextResponse.json({
-      status: 'error',
-      message: error instanceof Error ? error.message : 'Internal server error'
-    }, { status: 500 });
   }
 }
