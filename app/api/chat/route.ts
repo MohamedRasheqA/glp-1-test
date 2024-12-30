@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 
 export const maxDuration = 300;
-
+export const runtime = 'edge';
 export async function POST(request: Request) {
   try {
     const { query, persona } = await request.json();
