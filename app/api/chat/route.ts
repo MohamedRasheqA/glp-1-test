@@ -1,9 +1,6 @@
 // app/api/chat/route.ts
 import { NextRequest } from 'next/server';
 
-export const config = {
-  runtime: "edge",
-};
 export const dynamic = 'force-dynamic';
 
 // Helper function to create SSE message
