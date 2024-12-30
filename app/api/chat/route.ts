@@ -1,92 +1,61 @@
-// app/api/chat/route.ts
-import { NextRequest } from 'next/server';
-
-export const dynamic = 'force-dynamic';
-
-// Helper function to create SSE message
-const createSSEMessage = (data: any) => {
-  return `data: ${JSON.stringify(data)}\n\n`;
-};
-
+import { NextResponse } from 'next/server';
+export const maxDuration = 300;
 export async function POST(request: Request) {
   try {
-    const { query, persona = 'general_med' } = await request.json();
-
+    const { query, persona } = await request.json();
     if (!query) {
-      return new Response(
-        createSSEMessage({
-          status: 'error',
-          message: 'No query provided'
-        }),
-        {
-          headers: {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache, no-transform',
-            'Access-Control-Allow-Origin': '*'
-          },
-        }
-      );
+      return NextResponse.json({
+        status: 'error',
+        message: 'No message provided'
+      }, { status: 400 });
     }
-
-    const FLASK_API_URL = "https://medication-assistant-backend.vercel.app";
-
-    const response = await fetch(`${FLASK_API_URL}/api/chat/stream`, {
+    console.log('Sending request to Flask API:', query);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 290000);
+    const response = await fetch('https://medication-assistant-backend.vercel.app//api/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
-      body: JSON.stringify({ query, persona })
+      body: JSON.stringify({
+        query: query,
+        persona: persona || 'general_med'
+      }),
+      signal: controller.signal
     });
-
+    clearTimeout(timeoutId);
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Flask API Error:', errorText);
       throw new Error(`Flask API responded with status: ${response.status}`);
     }
-
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-
-    const stream = new TransformStream({
-      async transform(chunk, controller) {
-        const text = decoder.decode(chunk);
-        const lines = text.split('\n');
-        
-        for (const line of lines) {
-          if (line.trim() && line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(5));
-              controller.enqueue(encoder.encode(createSSEMessage(data)));
-            } catch (error) {
-              console.error('Error parsing stream data:', error);
-            }
-          }
-        }
-      }
-    });
-
-    return new Response(response.body?.pipeThrough(stream), {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-        'X-Accel-Buffering': 'no'
-      }
-    });
-
+    const data = await response.json();
+    // Add error handling for malformed response
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid response format from Flask API');
+    }
+    return NextResponse.json(data);
   } catch (error) {
-    return new Response(
-      createSSEMessage({
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Internal server error'
-      }),
-      {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache, no-transform',
-          'Access-Control-Allow-Origin': '*'
-        }
-      }
-    );
+    console.error('API Error:', error);
+    // Determine if it's a timeout error
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
+    return NextResponse.json({
+      status: 'error',
+      message: isTimeout
+        ? 'Request timed out'
+        : (error instanceof Error ? error.message : 'Internal server error')
+    }, {
+      status: isTimeout ? 408 : 500
+    });
   }
 }
+
+
+
+
+
+
+
+
 
