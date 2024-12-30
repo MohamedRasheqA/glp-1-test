@@ -14,7 +14,7 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    const response = await fetch('http://127.0.0.1:5000/api/chat/stream', {
+    const response = await fetch('https://medication-assistant-backend.vercel.app/api/chat/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
