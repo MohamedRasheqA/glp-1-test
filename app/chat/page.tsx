@@ -9,6 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { MessageCircle, Send, ThumbsUp, ThumbsDown, Loader2, Activity, Pill, Plus, Check } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import toast from 'react-hot-toast';
+import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import { Components } from 'react-markdown';
 
 interface ChatMessage {
   id: string;
@@ -16,12 +20,21 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   feedback?: number;
+  sources?: { [key: string]: string };
 }
 
 interface DetailedFeedbackProps {
   messageContent: string;
   messageId: string;
   onClose: () => void;
+}
+
+interface Memory {
+  id: string;
+  question: string;
+  question_summary: string;
+  timestamp: string;
+  distance: number;
 }
 
 type PersonaConfig = {
@@ -44,65 +57,109 @@ const personaConfig: PersonaConfig = {
     shortName: 'GLP-1'
   }
 };
-interface EnhancedMessageContentProps {
-  content: string | null | undefined;
+
+interface MessageContentProps {
+  content: string;
+  sources?: { [key: string]: string };
 }
 
-const EnhancedMessageContent: React.FC<EnhancedMessageContentProps> = ({ content }) => {
-  const formatText = (text: string | null | undefined) => {
-    // If text is null or undefined, return empty array
-    if (!text) {
-      return [];
-    }
-
-    // Split content into sections
-    const sections = text.split('\n\n');
-    
-    return sections.map((section, index) => {
-      if (!section.trim()) {
-        return null;
-      }
-
-      // Format bold text with **
-      let formattedSection = section.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      
-      // Format headings
-      if (section.startsWith('**') && section.endsWith('**')) {
-        formattedSection = `<h2 class="text-lg font-bold mb-3 mt-4">${formattedSection.slice(2, -2)}</h2>`;
-      }
-      
-      // Format bullet points
-      if (section.includes('\n* ')) {
-        const bullets = section.split('\n* ');
-        formattedSection = `<ul class="list-disc pl-6 space-y-2 my-3">
-          ${bullets.map((bullet, i) => 
-            i === 0 ? '' : `<li>${bullet}</li>`
-          ).join('')}
-        </ul>`;
-      }
-      
-      return (
-        <div 
-          key={index} 
-          className="mb-4"
-          dangerouslySetInnerHTML={{ __html: formattedSection }}
-        />
-      );
-    }).filter(Boolean); // Remove null elements
-  };
-
+const MessageContent = ({ content, sources = {} }: MessageContentProps) => {
   return (
-    <div className="prose prose-sm max-w-none">
-      {formatText(content)}
-    </div>
+    <ReactMarkdown
+      components={{
+        // Style paragraphs
+        p: ({ children }) => <p className="mb-4 last:mb-0">{children}</p>,
+        
+        // Style headings
+        h1: ({ children }) => <h1 className="text-2xl font-bold mb-4">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-xl font-bold mb-3">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-lg font-bold mb-2">{children}</h3>,
+        
+        // Style lists
+        ul: ({ children }) => <ul className="list-disc list-inside mb-4">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal list-inside mb-4">{children}</ol>,
+        
+        // Style code blocks and inline code
+        code: ({ node, inline, className, children, ...props }: {
+          node?: any;
+          inline?: boolean;
+          className?: string;
+          children?: React.ReactNode;
+          [key: string]: any;
+        }) => {
+          const match = /language-(\w+)/.exec(className || '');
+          return !inline && match ? (
+            <SyntaxHighlighter
+              style={oneDark}
+              language={match[1]}
+              PreTag="div"
+              className="rounded-md mb-4"
+              {...props}
+            >
+              {String(children).replace(/\n$/, '')}
+            </SyntaxHighlighter>
+          ) : (
+            <code className="bg-gray-100 rounded px-1 py-0.5" {...props}>
+              {children}
+            </code>
+          );
+        },
+        
+        // Style links
+        a: ({ href, children }) => (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#FE3301] hover:underline"
+          >
+            {children}
+          </a>
+        ),
+        
+        // Style blockquotes
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-4 border-gray-200 pl-4 italic mb-4">
+            {children}
+          </blockquote>
+        ),
+        
+        // Style tables
+        table: ({ children }) => (
+          <div className="overflow-x-auto mb-4">
+            <table className="min-w-full divide-y divide-gray-200">
+              {children}
+            </table>
+          </div>
+        ),
+        th: ({ children }) => (
+          <th className="px-4 py-2 bg-gray-50 text-left text-sm font-medium text-gray-500">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => (
+          <td className="px-4 py-2 text-sm text-gray-900">
+            {children}
+          </td>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
   );
 };
+
 // Global state for session maintenance
 const globalState = {
   messages: [] as ChatMessage[],
   selectedPersona: 'general_med',
+  similarQuestions: [] as Memory[],
   isProcessing: false,
-  sessionActive: false
+  sessionActive: false,
+  isLoading: false,
+  isTyping: false,
+  currentRequest: null as AbortController | null,
+  activeQuery: null as string | null
 };
 
 const DetailedFeedback = ({ messageContent, messageId, onClose }: DetailedFeedbackProps) => {
@@ -195,6 +252,7 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showDetailedFeedback, setShowDetailedFeedback] = useState<string | null>(null);
+  const [similarQuestions, setSimilarQuestions] = useState<Memory[]>(globalState.similarQuestions);
   const [selectedPersona, setSelectedPersona] = useState(globalState.selectedPersona);
   const [title, setTitle] = useState('Medication Assistant Discussion');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -211,7 +269,16 @@ export default function Chat() {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         setMessages(globalState.messages);
+        setSimilarQuestions(globalState.similarQuestions);
         setSelectedPersona(globalState.selectedPersona);
+        
+        if (globalState.activeQuery || globalState.currentRequest) {
+          setIsLoading(true);
+          setIsTyping(true);
+        } else {
+          setIsLoading(globalState.isLoading);
+          setIsTyping(globalState.isTyping);
+        }
 
         if (!globalState.isProcessing) {
           processingRef.current = false;
@@ -231,26 +298,39 @@ export default function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping, isLoading]);
-  const storeMemory = async (question: string, persona: string) => {
+
+  const storeMemory = async (question: string) => {
     try {
       const response = await fetch('/api/memory', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          question,
-          persona 
-        }),
+        body: JSON.stringify({ question }),
       });
-  
+
       if (!response.ok) {
         throw new Error('Failed to store memory');
       }
-  
+
       return await response.json();
     } catch (error) {
       console.error('Error storing memory:', error);
+    }
+  };
+
+  const getSimilarQuestions = async (query: string) => {
+    try {
+      const response = await fetch(`/api/memory?query=${encodeURIComponent(query)}`);
+      if (!response.ok) throw new Error('Failed to fetch similar questions');
+      
+      const data = await response.json();
+      if (data.status === 'success') {
+        setSimilarQuestions(data.memories);
+        globalState.similarQuestions = data.memories;
+      }
+    } catch (error) {
+      console.error('Error fetching similar questions:', error);
     }
   };
 
@@ -309,276 +389,245 @@ export default function Chat() {
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || processingRef.current) return;
 
-  // Frontend handleSubmit function
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!input.trim() || processingRef.current) return;
+    let timeoutId: NodeJS.Timeout | undefined;
+    const abortController = new AbortController();
+    globalState.currentRequest = abortController;
+    globalState.activeQuery = input;
 
-  processingRef.current = true;
-  globalState.isProcessing = true;
+    processingRef.current = true;
+    globalState.isProcessing = true;
+    setIsLoading(true);
+    setIsTyping(true);
+    globalState.isLoading = true;
+    globalState.isTyping = true;
 
-  const userMessage: ChatMessage = {
-    id: crypto.randomUUID(),
-    type: 'user',
-    content: input,
-    timestamp: new Date().toISOString()
-  };
-
-  setMessages(prev => [...prev, userMessage]);
-  globalState.messages = [...globalState.messages, userMessage];
-
-  const botMessage: ChatMessage = {
-    id: crypto.randomUUID(),
-    type: 'bot',
-    content: '',
-    timestamp: new Date().toISOString(),
-  };
-
-  setMessages(prev => [...prev, botMessage]);
-  globalState.messages = [...globalState.messages, botMessage];
-
-  setInput('');
-  setIsLoading(true);
-  setIsTyping(true);
-
-  try {
-    await storeMemory(input, selectedPersona);
-
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        query: input,
-        persona: selectedPersona
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to get response');
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('No response body');
-    }
-
-    let accumulatedContent = '';
-
-    const processStream = async () => {
-      while (true) {
-        const { done, value } = await reader.read();
-        
-        if (done) break;
-
-        const text = new TextDecoder().decode(value);
-        const messages = text.split('\n\n');
-
-        for (const message of messages) {
-          if (!message.trim() || !message.startsWith('data: ')) continue;
-
-          try {
-            const data = JSON.parse(message.slice(5));
-            
-            if (data.status === 'streaming' && data.content) {
-              accumulatedContent += data.content;
-              
-              setMessages(prev => {
-                const newMessages = [...prev];
-                const lastMessage = newMessages[newMessages.length - 1];
-                if (lastMessage?.type === 'bot') {
-                  lastMessage.content = accumulatedContent;
-                }
-                return [...newMessages];
-              });
-
-              scrollToBottom();
-            } 
-            else if (data.status === 'complete') {
-              setMessages(prev => {
-                const newMessages = [...prev];
-                const lastMessage = newMessages[newMessages.length - 1];
-                if (lastMessage?.type === 'bot') {
-                  lastMessage.content = data.response || accumulatedContent;
-                }
-                return [...newMessages];
-              });
-
-              if (data.title) setTitle(data.title);
-              break;
-            }
-          } catch (error) {
-            console.error('Error parsing message:', error);
-          }
-        }
-      }
-    };
-
-    await processStream();
-
-  } catch (error) {
-    console.error('Error:', error);
-    const errorMessage: ChatMessage = {
+    const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
-      type: 'bot',
-      content: 'Sorry, there was an error processing your request.',
+      type: 'user',
+      content: input,
       timestamp: new Date().toISOString()
     };
 
-    setMessages(prev => [...prev, errorMessage]);
-    globalState.messages = [...globalState.messages, errorMessage];
-  } finally {
-    setIsLoading(false);
-    setIsTyping(false);
-    processingRef.current = false;
-    globalState.isProcessing = false;
-  }
-};
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    globalState.messages = updatedMessages;
+
+    setInput('');
+
+    try {
+      await Promise.all([
+        storeMemory(input),
+        getSimilarQuestions(input)
+      ]);
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          query: input,
+          similarQuestions: similarQuestions,
+          persona: selectedPersona
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response');
+      }
+
+      const data = await response.json();
+      
+      if (data.status === 'success' && data.response) {
+        if (data.title) setTitle(data.title);
+        const botMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          type: 'bot',
+          content: data.response,
+          timestamp: new Date().toISOString(),
+        };
+        console.log("title", data.title);
+        const newMessages = [...updatedMessages, botMessage];
+        setMessages(newMessages);
+        globalState.messages = newMessages;
+      }
+    } catch (error) {
+      const errorMessage: ChatMessage = {
+        id: crypto.randomUUID(),
+        type: 'bot',
+        content: 'Sorry, there was an error processing your request.',
+        timestamp: new Date().toISOString()
+      };
+
+      const newMessages = [...updatedMessages, errorMessage];
+      setMessages(newMessages);
+      globalState.messages = newMessages;
+    } finally {
+      if (globalState.currentRequest === abortController) {
+        setIsLoading(false);
+        setIsTyping(false);
+        globalState.isLoading = false;
+        globalState.isTyping = false;
+        processingRef.current = false;
+        globalState.isProcessing = false;
+        globalState.currentRequest = null;
+        globalState.activeQuery = null;
+      }
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-t from-[#FFF5F2] via-[#FFF9F7] to-white">
       <Header />
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8 h-[calc(100vh-4rem)]">
         <h1 className="text-3xl font-bold text-center mb-8 text-[#FE3301]">
           Medication Assistant
         </h1>
         
-        <Card className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm shadow-lg">
+        <Card className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm shadow-lg h-[calc(100%-4rem)]">
           <CardHeader className="border-b">
             <CardTitle className="flex items-center gap-2 text-[#FE3301]">
               <MessageCircle className="h-6 w-6" />
               {title}
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex flex-col h-[calc(100vh-20rem)]">
-              <div className="flex-1 overflow-y-auto pr-2 space-y-4 chat-container scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                {messages.map((message, index) => (
-                  <div 
-                    key={message.id} 
-                    className="w-full"
-                  >
-                    <div className="w-full">
-                      {message.type === 'bot' ? (
-                        <div className="text-sm text-gray-600 mb-1">AI Assistant</div>
-                      ) : (
-                        <div className="text-sm text-gray-600 mb-1">You</div>
-                      )}
-                      <div 
-                        className={`rounded-lg p-4 ${
-                          message.type === 'user' 
-                            ? 'bg-gradient-to-r from-[#FFE5E0] to-[#FFE9E5] border border-[#FE330125]' 
-                            : 'bg-white border border-gray-100'
-                        }`}
-                      >
-                        <EnhancedMessageContent content={message.content} />
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <div className="text-xs text-gray-500">
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </div>
-                        {message.type === 'bot' && (
-                          <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleFeedback(index, 1)}
-                              className={`p-2 hover:bg-green-100 ${
-                                message.feedback === 1 ? 'bg-green-100' : ''
-                              }`}
-                            >
-                              <ThumbsUp className={`h-4 w-4 ${
-                                message.feedback === 1 ? 'text-green-600' : 'text-gray-500'
-                              }`} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleFeedback(index, 0)}
-                              className={`p-2 hover:bg-red-100 ${
-                                message.feedback === 0 ? 'bg-red-100' : ''
-                              }`}
-                            >
-                              <ThumbsDown className={`h-4 w-4 ${
-                                message.feedback === 0 ? 'text-red-600' : 'text-gray-500'
-                              }`} />
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {(isTyping || isLoading) && (
+          <CardContent className="p-4 sm:p-6 flex flex-col h-[calc(100%-4rem)]">
+            <div className="flex-1 overflow-y-auto mb-4 chat-container">
+              {messages.map((message, index) => (
+                <div 
+                  key={message.id} 
+                  className="w-full"
+                >
                   <div className="w-full">
-                    <div className="bg-white border border-gray-100 rounded-lg p-4">
-                      <div className="flex space-x-2 justify-center items-center h-6">
-                        <span className="sr-only">Loading...</span>
-                        <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce"></div>
-                        <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    {message.type === 'bot' ? (
+                      <div className="text-sm text-gray-600 mb-1">AI Assistant</div>
+                    ) : (
+                      <div className="text-sm text-gray-600 mb-1">You</div>
+                    )}
+                    <div 
+                      className={`rounded-lg p-4 ${
+                        message.type === 'user' 
+                          ? 'bg-gradient-to-r from-[#FFE5E0] to-[#FFE9E5] border border-[#FE330125]' 
+                          : 'bg-white border border-gray-100'
+                      }`}
+                    >
+                      <MessageContent content={message.content} sources={message.sources} />
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="text-xs text-gray-500">
+                        {new Date(message.timestamp).toLocaleTimeString()}
                       </div>
+                      {message.type === 'bot' && (
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleFeedback(index, 1)}
+                            className={`p-2 hover:bg-green-100 ${
+                              message.feedback === 1 ? 'bg-green-100' : ''
+                            }`}
+                          >
+                            <ThumbsUp className={`h-4 w-4 ${
+                              message.feedback === 1 ? 'text-green-600' : 'text-gray-500'
+                            }`} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleFeedback(index, 0)}
+                            className={`p-2 hover:bg-red-100 ${
+                              message.feedback === 0 ? 'bg-red-100' : ''
+                            }`}
+                          >
+                            <ThumbsDown className={`h-4 w-4 ${
+                              message.feedback === 0 ? 'text-red-600' : 'text-gray-500'
+                            }`} />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-              <form onSubmit={handleSubmit} className="mt-4 flex gap-2">
-                <div className="flex-1 flex gap-2">
-                  <Select
-                    value={selectedPersona}
-                    onValueChange={setSelectedPersona}
-                  >
-                    <SelectTrigger className="w-10 h-10 p-0 border-none bg-transparent hover:bg-gray-100 rounded-full flex items-center justify-center">
-                      {selectedPersona ? (
-                        <div style={{ color: personaConfig[selectedPersona].color }}>
-                          {personaConfig[selectedPersona].icon}
-                        </div>
-                      ) : (
-                        <Plus className="h-4 w-4 text-gray-400" />
-                      )}
-                    </SelectTrigger>
-                    <SelectContent align="start" className="w-[200px]">
-                      {Object.entries(personaConfig).map(([key, config]) => (
-                        <SelectItem 
-                          key={key} 
-                          value={key}
-                          className="flex items-center gap-2"
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-2">
-                              <div style={{ color: config.color }}>
-                                {config.icon}
-                              </div>
-                              <span>{config.shortName}</span>
-                            </div>
-                            {selectedPersona === key && (
-                              <Check className="h-4 w-4" />
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Type your message..."
-                    disabled={isLoading}
-                    className="flex-1"
-                  />
                 </div>
+              ))}
+              {(isTyping || isLoading) && (
+                <div className="w-full">
+                  <div className="bg-white border border-gray-100 rounded-lg p-4">
+                    <div className="flex space-x-2 justify-center items-center h-6">
+                      <span className="sr-only">Loading...</span>
+                      <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce"></div>
+                      <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="h-2 w-2 bg-[#FE3301] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+            <form onSubmit={handleSubmit} className="flex gap-2">
+              <div className="flex-1 flex gap-2">
+                <Select
+                  value={selectedPersona}
+                  onValueChange={setSelectedPersona}
+                >
+                  <SelectTrigger className="w-12 h-12 mb-2 p-0 border-none bg-transparent hover:bg-gray-100 rounded-full flex items-center justify-center">
+                    {selectedPersona ? (
+                      <div style={{ color: personaConfig[selectedPersona].color }}>
+                        {personaConfig[selectedPersona].icon}
+                        <span className="sr-only">{personaConfig[selectedPersona].shortName}</span>
+                      </div>
+                    ) : (
+                      <Plus className="h-5 w-5 text-gray-400" />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent align="start" className="w-[200px]">
+                    {Object.entries(personaConfig).map(([key, config]) => (
+                      <SelectItem key={key} value={key}>
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-2">
+                            <div style={{ color: config.color }}>
+                              {config.icon}
+                            </div>
+                            <span>{config.shortName}</span>
+                          </div>
+                          {selectedPersona === key && (
+                            <Check className="h-4 w-4" />
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(e);
+                    }
+                  }}
+                  placeholder="Type your message..."
+                  className="flex-1 min-h-[60px] max-h-[120px] bg-white rounded-lg px-4 py-2 focus:outline-none resize-none w-full whitespace-pre-wrap scrollbar-hide border border-gray-200 focus:border-[#FE3301] sm:text-base text-sm"
+                  style={{
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none'
+                  }}
+                />
+              </div>
+              <div className="flex items-end">
                 <Button 
                   type="submit" 
                   disabled={isLoading}
-                  className="bg-[#FE3301] text-white hover:bg-[#FE3301]/90"
+                  className="bg-[#FE3301] text-white hover:bg-[#FE3301]/90 h-12 w-12"
                 >
-                  <Send className="h-4 w-4" />
+                  <Send className="h-5 w-5" />
                 </Button>
-              </form>
-            </div>
+              </div>
+            </form>
           </CardContent>
         </Card>
       </main>
@@ -631,6 +680,42 @@ const handleSubmit = async (e: React.FormEvent) => {
           background-color: transparent;
         }
 
+        .memory-indicator {
+          position: absolute;
+          top: -8px;
+          right: -8px;
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background-color: #FE3301;
+          border: 2px solid white;
+          animation: pulse 2s infinite;
+        }
+
+        .similar-questions {
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          background: white;
+          border: 1px solid #FE330115;
+          border-radius: 8px;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          z-index: 10;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+
+        .similar-question-item {
+          padding: 8px 12px;
+          cursor: pointer;
+          transition: background-color 0.2s;
+        }
+
+        .similar-question-item:hover {
+          background-color: #FFF5F2;
+        }
+
         @media (max-width: 640px) {
           .max-w-[80%] {
             max-width: 85%;
@@ -638,12 +723,18 @@ const handleSubmit = async (e: React.FormEvent) => {
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .animate-bounce {
+          .animate-bounce,
+          .memory-indicator {
             animation: none;
           }
         }
 
         @media (forced-colors: active) {
+          .memory-indicator {
+            border: 2px solid CanvasText;
+            background-color: Highlight;
+          }
+          
           .similar-question-item:hover {
             background-color: Highlight;
             color: HighlightText;
