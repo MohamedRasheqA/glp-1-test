@@ -1,7 +1,7 @@
 // app/api/chat/route.ts
 import { NextRequest } from 'next/server';
 
-export const runtime = 'edge'; // Changed to edge runtime for better streaming support
+export const runtime = 'nodejs'; // Changed to edge runtime for better streaming support
 export const dynamic = 'force-dynamic';
 
 // Helper function to create SSE message
