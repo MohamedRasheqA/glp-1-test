@@ -309,108 +309,134 @@ export default function Chat() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || processingRef.current) return;
-  
-    processingRef.current = true;
-    globalState.isProcessing = true;
-  
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      type: 'user',
-      content: input,
-      timestamp: new Date().toISOString()
-    };
-  
-    // Add user message immediately
-    setMessages(prev => [...prev, userMessage]);
-    globalState.messages = [...globalState.messages, userMessage];
-  
-    // Create bot message placeholder
-    const botMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      type: 'bot',
-      content: '',
-      timestamp: new Date().toISOString(),
-    };
-  
-    // Add empty bot message
-    setMessages(prev => [...prev, botMessage]);
-    globalState.messages = [...globalState.messages, botMessage];
-  
-    setInput('');
-    setIsLoading(true);
-    setIsTyping(true);
-  
-    try {
-      await storeMemory(input, selectedPersona);
-  
-      // Use EventSource for SSE
-      const eventSource = new EventSource(`/api/chat?query=${encodeURIComponent(input)}&persona=${selectedPersona}`);
-      let accumulatedContent = '';
-  
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('Received data:', data); // Debug log
-  
-          if (data.status === 'streaming' && data.content) {
-            accumulatedContent += data.content;
+
+  // Frontend handleSubmit function
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!input.trim() || processingRef.current) return;
+
+  processingRef.current = true;
+  globalState.isProcessing = true;
+
+  const userMessage: ChatMessage = {
+    id: crypto.randomUUID(),
+    type: 'user',
+    content: input,
+    timestamp: new Date().toISOString()
+  };
+
+  setMessages(prev => [...prev, userMessage]);
+  globalState.messages = [...globalState.messages, userMessage];
+
+  const botMessage: ChatMessage = {
+    id: crypto.randomUUID(),
+    type: 'bot',
+    content: '',
+    timestamp: new Date().toISOString(),
+  };
+
+  setMessages(prev => [...prev, botMessage]);
+  globalState.messages = [...globalState.messages, botMessage];
+
+  setInput('');
+  setIsLoading(true);
+  setIsTyping(true);
+
+  try {
+    await storeMemory(input, selectedPersona);
+
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        query: input,
+        persona: selectedPersona
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get response');
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    let accumulatedContent = '';
+
+    const processStream = async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+
+        const text = new TextDecoder().decode(value);
+        const messages = text.split('\n\n');
+
+        for (const message of messages) {
+          if (!message.trim() || !message.startsWith('data: ')) continue;
+
+          try {
+            const data = JSON.parse(message.slice(5));
             
-            // Update message content
-            setMessages(prev => {
-              const newMessages = [...prev];
-              const lastMessage = newMessages[newMessages.length - 1];
-              if (lastMessage && lastMessage.type === 'bot') {
-                lastMessage.content = accumulatedContent;
-              }
-              return newMessages;
-            });
-          } else if (data.status === 'complete') {
-            // Final update
-            if (data.response) {
+            if (data.status === 'streaming' && data.content) {
+              accumulatedContent += data.content;
+              
               setMessages(prev => {
                 const newMessages = [...prev];
                 const lastMessage = newMessages[newMessages.length - 1];
-                if (lastMessage && lastMessage.type === 'bot') {
-                  lastMessage.content = data.response;
+                if (lastMessage?.type === 'bot') {
+                  lastMessage.content = accumulatedContent;
                 }
-                return newMessages;
+                return [...newMessages];
               });
+
+              scrollToBottom();
+            } 
+            else if (data.status === 'complete') {
+              setMessages(prev => {
+                const newMessages = [...prev];
+                const lastMessage = newMessages[newMessages.length - 1];
+                if (lastMessage?.type === 'bot') {
+                  lastMessage.content = data.response || accumulatedContent;
+                }
+                return [...newMessages];
+              });
+
+              if (data.title) setTitle(data.title);
+              break;
             }
-            
-            if (data.title) setTitle(data.title);
-            eventSource.close();
+          } catch (error) {
+            console.error('Error parsing message:', error);
           }
-        } catch (error) {
-          console.error('Error parsing message:', error);
         }
-      };
-  
-      eventSource.onerror = (error) => {
-        console.error('EventSource error:', error);
-        eventSource.close();
-      };
-  
-    } catch (error) {
-      console.error('Error:', error);
-      const errorMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        type: 'bot',
-        content: 'Sorry, there was an error processing your request.',
-        timestamp: new Date().toISOString()
-      };
-  
-      setMessages(prev => [...prev, errorMessage]);
-      globalState.messages = [...globalState.messages, errorMessage];
-    } finally {
-      setIsLoading(false);
-      setIsTyping(false);
-      processingRef.current = false;
-      globalState.isProcessing = false;
-    }
-  };
+      }
+    };
+
+    await processStream();
+
+  } catch (error) {
+    console.error('Error:', error);
+    const errorMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      type: 'bot',
+      content: 'Sorry, there was an error processing your request.',
+      timestamp: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, errorMessage]);
+    globalState.messages = [...globalState.messages, errorMessage];
+  } finally {
+    setIsLoading(false);
+    setIsTyping(false);
+    processingRef.current = false;
+    globalState.isProcessing = false;
+  }
+};
+
   return (
     <div className="min-h-screen bg-gradient-to-t from-[#FFF5F2] via-[#FFF9F7] to-white">
       <Header />
