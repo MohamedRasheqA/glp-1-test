@@ -83,6 +83,14 @@ class UserProfileManager:
             logger.error(f"Error processing input: {str(e)}")
             return {}
 
+def clean_response(response_text: str) -> str:
+    """Clean the response text by removing citation numbers and formatting"""
+    # Remove citation numbers in various formats
+    cleaned_text = re.sub(r'\[\[?\d+\]?\](?:\(#\d+\))?', '', response_text)
+    # Remove the Sources section
+    cleaned_text = re.sub(r'\nSources:(\n.*)*$', '', cleaned_text, flags=re.MULTILINE)
+    return cleaned_text.strip()
+
 class HealthAssistant:
     _instance: ClassVar[Optional['HealthAssistant']] = None
     
@@ -364,8 +372,8 @@ Remember:
             payload = {
                 "model": self.pplx_model,
                 "messages": [
-                    {"role": "system", "content": self.system_prompts[self.current_persona]},
-                    {"role": "user", "content": query}  # Use original query for response
+                    {"role": "system", "content": "Provide a detailed answer without including citation numbers.\n" + self.system_prompts[self.current_persona]},
+                    {"role": "user", "content": query}
                 ],
                 "temperature": 0.1,
                 "max_tokens": 1500
@@ -381,10 +389,13 @@ Remember:
             response_data = response.json()
             content = response_data['choices'][0]['message']['content']
             
-            # Update conversation history
+            # Clean the response before storing and returning
+            cleaned_content = clean_response(content)
+            
+            # Update conversation history with cleaned content
             self.conversation_history.append({
                 "query": query,
-                "response": content,
+                "response": cleaned_content,
                 "persona": self.current_persona,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             })
@@ -393,7 +404,7 @@ Remember:
                 "status": "success",
                 "query": query,
                 "query_category": self.categorize_query(query),
-                "response": content.strip(),
+                "response": cleaned_content,
                 "persona": self.current_persona,
                 "title": title,  # Add the generated title
                 "disclaimer": "Always consult your healthcare provider before making any changes to your medication or treatment plan.",
@@ -980,16 +991,27 @@ def chat_stream():
         assistant = HealthAssistant()
 
         def generate():
-            for response in assistant.get_streaming_response(query, selected_persona):
-                yield f"data: {response}\n\n"
+            try:
+                for response in assistant.get_streaming_response(query, selected_persona):
+                    # Ensure each response chunk is properly formatted
+                    if isinstance(response, str):
+                        chunk = response
+                    else:
+                        chunk = json.dumps(response)
+                    yield f"data: {chunk}\n\n"
+            except Exception as e:
+                logger.error(f"Error in stream generation: {str(e)}")
+                yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
 
         return Response(
             stream_with_context(generate()),
             mimetype='text/event-stream',
             headers={
                 'Cache-Control': 'no-cache',
+                'Content-Type': 'text/event-stream',
                 'Connection': 'keep-alive',
-                'X-Accel-Buffering': 'no'
+                'X-Accel-Buffering': 'no',
+                'Access-Control-Allow-Origin': '*'
             }
         )
 
